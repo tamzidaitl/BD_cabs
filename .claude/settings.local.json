@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version; \\(Get-Command pnpm -ErrorAction SilentlyContinue\\).Source; \\(Get-Command npm -ErrorAction SilentlyContinue\\).Source; \\(Get-Command corepack -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(pnpm install *)",
+      "PowerShell(pnpm typecheck *)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet ef *)",
+      "Bash(mkdir -p \"C:/my_project/BD_Cabs/backend\")",
+      "Bash(dotnet new *)",
+      "Bash(dotnet add *)",
+      "Bash(ls *.cs)",
+      "Bash(rm -f WeatherForecast.cs)",
+      "Bash(ls Controllers)",
+      "Bash(dotnet --list-runtimes)",
+      "Bash(dotnet restore *)",
+      "PowerShell(git config *)",
+      "PowerShell(git *)"
+    ]
+  }
+}

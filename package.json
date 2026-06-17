@@ -1,0 +1,23 @@
+{
+  "name": "bd-cabs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BD Cabs — scalable frontend monorepo (Next.js admin panel + shared core for a future React Native app)",
+  "packageManager": "pnpm@9.7.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.14",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18.18.0",
+    "pnpm": ">=9"
+  }
+}

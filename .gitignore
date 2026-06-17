@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+.next/
+out/
+.turbo/
+bin/
+obj/
+
+# env
+.env
+.env.local
+.env*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.tsbuildinfo

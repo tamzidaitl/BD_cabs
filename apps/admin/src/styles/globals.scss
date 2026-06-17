@@ -1,0 +1,50 @@
+// Bootstrap 5 with a light BD Cabs theme override.
+// Override Sass variables BEFORE importing Bootstrap so the whole framework
+// (buttons, links, focus rings) picks up the brand colour.
+$primary: #0b8457; // BD Cabs green
+$secondary: #6c757d;
+$body-bg: #f5f6f8;
+$border-radius: 0.5rem;
+
+// Pull in the full framework. For production you can cherry-pick modules to
+// shrink CSS, but the full import keeps DX simple for the scaffold.
+@import 'bootstrap/scss/bootstrap';
+
+// App chrome
+:root {
+  --sidebar-width: 264px;
+  --topbar-height: 60px;
+}
+
+.app-sidebar {
+  width: var(--sidebar-width);
+  background: #0f1f1a;
+  color: #cfe9df;
+}
+
+.app-sidebar .nav-link {
+  color: #9fc8b8;
+  border-radius: var(--border-radius);
+}
+
+.app-sidebar .nav-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-sidebar .nav-link.active {
+  color: #fff;
+  background: $primary;
+}
+
+.app-sidebar .nav-group-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5f8576;
+}
+
+.app-content {
+  min-height: 100vh;
+  background: var(--bs-body-bg);
+}
