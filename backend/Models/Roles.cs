@@ -23,6 +23,13 @@ namespace BdCabs.Api.Models
         /// <summary>Staff roles — created by SuperAdmin, allowed into the admin panel.</summary>
         public static readonly string[] Staff = { SupportAdmin, FinanceAdmin, SuperAdmin };
 
+        /// <summary>
+        /// End-user roles a Support Admin is allowed to see in the user list
+        /// (Customer, Driver, Vehicle/Fleet Owner, Corporate Client). Staff
+        /// accounts are hidden from Support Admins.
+        /// </summary>
+        public static readonly string[] SupportVisible = { Customer, Driver, FleetOwner, Corporate };
+
         public static readonly string[] All =
         {
             Guest, Customer, Driver, FleetOwner, Corporate, SupportAdmin, FinanceAdmin, SuperAdmin,
@@ -47,6 +54,32 @@ namespace BdCabs.Api.Models
         public const string Pending = "pending";
         public const string Approved = "approved";
         public const string Rejected = "rejected";
+    }
+
+    /// <summary>
+    /// How a driver's online availability is controlled. "online"/"offline" are
+    /// manual; "auto" lets the platform keep the driver available (e.g. while the
+    /// app is open / on a schedule). Stored as a string to match the frontend.
+    /// </summary>
+    public static class AvailabilityMode
+    {
+        public const string Online = "online";
+        public const string Offline = "offline";
+        public const string Auto = "auto";
+
+        public static readonly string[] All = { Online, Offline, Auto };
+        public static bool IsValid(string? s) => s is not null && All.Contains(s);
+    }
+
+    public static class Gender
+    {
+        public const string Male = "male";
+        public const string Female = "female";
+        // Bangladesh legally recognizes a third gender (hijra).
+        public const string Third = "third-gender";
+
+        public static readonly string[] All = { Male, Female, Third };
+        public static bool IsValid(string? s) => s is not null && All.Contains(s);
     }
 
     public static class CouponType

@@ -6,10 +6,9 @@ import {
   type Services,
 } from '@bd-cabs/core';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.bdcabs.com/api/v1';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://api.bdcabs.com/api/v1';
 // SignalR hubs live at the host root (/hubs/...), not under /api/v1.
-const REALTIME_ORIGIN =
-  process.env.NEXT_PUBLIC_REALTIME_ORIGIN ?? new URL(BASE_URL).origin;
+const REALTIME_ORIGIN = import.meta.env.VITE_REALTIME_ORIGIN ?? new URL(BASE_URL).origin;
 
 /**
  * Builds the concrete ApiClient + endpoints for the web app and wires them to

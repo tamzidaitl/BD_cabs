@@ -157,6 +157,60 @@ export interface Ride {
   cancelledAt?: ISODateString;
 }
 
+/** A ride party (customer or driver) summarised for the Ops rides console. */
+export interface AdminRideParty {
+  id: UUID;
+  fullName: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+}
+
+/** The car assigned to a ride, summarised for the Ops rides console. */
+export interface AdminRideVehicle {
+  id: UUID;
+  type: string;
+  plateNumber: string;
+  make?: string | null;
+  model?: string | null;
+  color?: string | null;
+  year?: number | null;
+  /** Operational state — one of VehicleStatus. */
+  status: string;
+  /** One of VerificationStatus. */
+  verificationStatus: string;
+}
+
+/**
+ * An enriched ride row for the Support/Super Admin rides console (GET /ops/rides):
+ * who is riding with whom, the pickup/destination, the assigned car, and any
+ * problems flagged on the trip. Mirrors the backend AdminRideDto.
+ */
+export interface AdminRide {
+  id: UUID;
+  status: RideStatus;
+  vehicleTypeId: string;
+  customer: AdminRideParty;
+  driver?: AdminRideParty | null;
+  vehicle?: AdminRideVehicle | null;
+  pickup: GeoPoint;
+  destination: GeoPoint;
+  distanceMeters: number;
+  durationSeconds: number;
+  currency: string;
+  fareEstimateMinor: number;
+  finalFareMinor?: number | null;
+  discountMinor: number;
+  paymentMethod: string;
+  cancelledBy?: string | null;
+  cancelReason?: string | null;
+  /** Human-readable problems flagged on this ride; empty when all is well. */
+  problems: string[];
+  requestedAt: ISODateString;
+  startedAt?: ISODateString | null;
+  completedAt?: ISODateString | null;
+  cancelledAt?: ISODateString | null;
+}
+
 /** Result of POST /rides/request — the ride plus the OTP shared with the driver. */
 export interface RideCreated {
   ride: Ride;

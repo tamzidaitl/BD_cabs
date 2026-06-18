@@ -10,5 +10,6 @@ namespace BdCabs.Api.Interfaces
         Task Logout(string refreshToken);
         Task<UserDto> GetCurrentUser();
         Task ChangePassword(ChangePasswordDto dto);
+        Task<UserDto> UpdateProfile(UpdateProfileDto dto);
     }
 }

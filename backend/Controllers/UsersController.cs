@@ -19,15 +19,16 @@ namespace BdCabs.Api.Controllers
             _users = users;
         }
 
-        // GET /api/v1/users?page=1&pageSize=20&q=term
+        // GET /api/v1/users?page=1&pageSize=20&q=term&role=Driver
         [HttpGet]
         [Authorize(Roles = $"{Roles.SupportAdmin},{Roles.SuperAdmin}")]
         public async Task<ActionResult<PagedResult<UserDto>>> List(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
-            [FromQuery] string? q = null)
+            [FromQuery] string? q = null,
+            [FromQuery] string? role = null)
         {
-            return Ok(await _users.List(page, pageSize, q));
+            return Ok(await _users.List(page, pageSize, q, role));
         }
 
         [HttpGet("{id:guid}")]
@@ -37,11 +38,22 @@ namespace BdCabs.Api.Controllers
             return Ok(await _users.GetById(id));
         }
 
+        // PATCH /api/v1/users/{id}/status — Support Admin can activate; Super Admin
+        // can set any status (activate/suspend/ban). Enforced in the service.
         [HttpPatch("{id:guid}/status")]
-        [Authorize(Roles = Roles.SuperAdmin)]
+        [Authorize(Roles = $"{Roles.SupportAdmin},{Roles.SuperAdmin}")]
         public async Task<ActionResult<UserDto>> SetStatus(Guid id, [FromBody] UpdateStatusDto dto)
         {
             return Ok(await _users.SetStatus(id, dto.Status));
+        }
+
+        // DELETE /api/v1/users/{id} — Super Admin only.
+        [HttpDelete("{id:guid}")]
+        [Authorize(Roles = Roles.SuperAdmin)]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _users.DeleteUser(id);
+            return NoContent();
         }
     }
 }

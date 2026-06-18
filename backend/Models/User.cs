@@ -11,8 +11,19 @@ namespace BdCabs.Api.Models
     {
         public Guid Id { get; set; }
 
+        [MaxLength(75)]
+        public string FirstName { get; set; } = string.Empty;
+
+        [MaxLength(75)]
+        public string LastName { get; set; } = string.Empty;
+
+        /// <summary>Display name, composed from first + last name on registration.</summary>
         [MaxLength(150)]
         public string FullName { get; set; } = string.Empty;
+
+        /// <summary>One of <see cref="Models.Gender"/> ("male" | "female" | "third-gender").</summary>
+        [MaxLength(20)]
+        public string? Gender { get; set; }
 
         [MaxLength(256)]
         public string Email { get; set; } = string.Empty;

@@ -52,7 +52,10 @@ export class ApiClient {
     const url = this.buildUrl(path, options.query);
     const headers: Record<string, string> = { Accept: 'application/json' };
 
-    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    // FormData (file uploads) is sent as-is; the browser sets the multipart
+    // Content-Type with boundary. Everything else is JSON-serialized.
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
     if (!options.anonymous) {
       const token = this.config.getAccessToken();
       if (token) headers.Authorization = `Bearer ${token}`;
@@ -61,7 +64,12 @@ export class ApiClient {
     const res = await fetch(url, {
       method: options.method ?? 'GET',
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body:
+        options.body === undefined
+          ? undefined
+          : isFormData
+            ? (options.body as FormData)
+            : JSON.stringify(options.body),
       signal: options.signal,
     });
 

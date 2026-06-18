@@ -67,7 +67,7 @@ export default function DrivePage() {
     return (
       <Alert variant="info">
         Finish onboarding to start driving.{' '}
-        <Link to="/drive/documents" className="alert-link">Submit your details &amp; documents</Link>.
+        <Link to="/app/documents" className="alert-link">Submit your details &amp; documents</Link>.
       </Alert>
     );
   }

@@ -18,6 +18,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly (Permission | typeof ALL_PE
 
   [Role.SupportAdmin]: [
     Permission.USERS_READ,
+    Permission.USERS_ACTIVATE,
     Permission.OPS_DASHBOARD,
     Permission.OPS_RIDES_VIEW,
     Permission.OPS_BOOKINGS_CREATE,

@@ -48,3 +48,26 @@ $border-radius: 0.5rem;
   min-height: 100vh;
   background: var(--bs-body-bg);
 }
+
+// Desktop (lg+): pin the sidebar so body scroll never moves it, and offset the
+// content by the sidebar width. The sidebar gets its own internal scroll for
+// long nav lists.
+@include media-breakpoint-up(lg) {
+  .app-sidebar-fixed {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 1030;
+  }
+
+  .app-content-offset {
+    margin-left: var(--sidebar-width);
+  }
+}
+
+// NOTE: Per project convention we avoid custom CSS — use Bootstrap utilities in
+// markup instead. The rules above are the justified exceptions: brand theme
+// variables, the dark sidebar chrome, and the fixed-sidebar layout (which has
+// no Bootstrap equivalent at a breakpoint).

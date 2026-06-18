@@ -6,8 +6,15 @@ namespace BdCabs.Api.DTOs
 
     public class RegisterDto
     {
-        [Required, MaxLength(150)]
-        public string FullName { get; set; } = string.Empty;
+        [Required, MaxLength(75)]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required, MaxLength(75)]
+        public string LastName { get; set; } = string.Empty;
+
+        /// <summary>"male" | "female" | "third-gender" (validated in the service).</summary>
+        [Required]
+        public string Gender { get; set; } = string.Empty;
 
         [Required, EmailAddress, MaxLength(256)]
         public string Email { get; set; } = string.Empty;

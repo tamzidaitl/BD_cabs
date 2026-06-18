@@ -43,8 +43,17 @@ namespace BdCabs.Api.Services
                     "ROLE_NOT_SELF_REGISTERABLE");
             }
 
+            if (!Gender.IsValid(dto.Gender))
+            {
+                throw AppException.BadRequest(
+                    $"Invalid gender. Allowed: {string.Join(", ", Gender.All)}.",
+                    "INVALID_GENDER");
+            }
+
             var email = dto.Email.Trim().ToLowerInvariant();
             var phone = dto.Phone.Trim();
+            var firstName = dto.FirstName.Trim();
+            var lastName = dto.LastName.Trim();
 
             if (await _db.Users.AnyAsync(u => u.Email == email))
                 throw AppException.Conflict("Email already registered.", "EMAIL_TAKEN");
@@ -58,7 +67,10 @@ namespace BdCabs.Api.Services
             var user = new User
             {
                 Id = Guid.NewGuid(),
-                FullName = dto.FullName.Trim(),
+                FirstName = firstName,
+                LastName = lastName,
+                FullName = $"{firstName} {lastName}".Trim(),
+                Gender = dto.Gender,
                 Email = email,
                 Phone = phone,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
@@ -157,6 +169,32 @@ namespace BdCabs.Api.Services
             await _db.SaveChangesAsync();
         }
 
+        public async Task<UserDto> UpdateProfile(UpdateProfileDto dto)
+        {
+            var userId = _currentUser.UserId
+                ?? throw AppException.Unauthorized("Not authenticated.");
+
+            var user = await _db.Users.FindAsync(userId)
+                ?? throw AppException.NotFound("User not found.");
+
+            var fullName = dto.FullName?.Trim();
+            if (!string.IsNullOrEmpty(fullName))
+            {
+                user.FullName = fullName;
+                // Keep first/last roughly in sync with the edited display name.
+                var parts = fullName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                user.FirstName = parts.Length > 0 ? parts[0] : user.FirstName;
+                user.LastName = parts.Length > 1 ? parts[1] : string.Empty;
+            }
+
+            if (dto.AvatarUrl is not null)
+                user.AvatarUrl = dto.AvatarUrl.Trim().Length == 0 ? null : dto.AvatarUrl.Trim();
+
+            user.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return ToUserDto(user);
+        }
+
         // ---- helpers ----------------------------------------------------------
 
         private async Task<AuthSessionDto> IssueSession(User user)
@@ -201,7 +239,10 @@ namespace BdCabs.Api.Services
         private static UserDto ToUserDto(User u) => new()
         {
             Id = u.Id,
+            FirstName = u.FirstName,
+            LastName = u.LastName,
             FullName = u.FullName,
+            Gender = u.Gender,
             Email = u.Email,
             Phone = u.Phone,
             Role = u.Role,

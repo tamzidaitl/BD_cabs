@@ -175,6 +175,72 @@ namespace BdCabs.Api.DTOs
         public double? Rating { get; set; }
     }
 
+    // ---- Ops / Admin overview -------------------------------------------------
+
+    /// <summary>A ride party (customer or driver) summarised for the ops rides table.</summary>
+    public class AdminRidePartyDto
+    {
+        public Guid Id { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string? Phone { get; set; }
+        public string? AvatarUrl { get; set; }
+    }
+
+    /// <summary>The car assigned to a ride, summarised for the ops rides table.</summary>
+    public class AdminRideVehicleDto
+    {
+        public Guid Id { get; set; }
+        public string Type { get; set; } = string.Empty;
+        public string PlateNumber { get; set; } = string.Empty;
+        public string? Make { get; set; }
+        public string? Model { get; set; }
+        public string? Color { get; set; }
+        public int? Year { get; set; }
+        /// <summary>Operational state — one of VehicleStatus.</summary>
+        public string Status { get; set; } = string.Empty;
+        /// <summary>One of VerificationStatus.</summary>
+        public string VerificationStatus { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// An enriched ride row for the Support/Super Admin rides console: who is
+    /// riding with whom, the pickup/destination, the assigned car, and any
+    /// problems flagged on the trip (SOS alert, cancellation, no driver, unverified car).
+    /// </summary>
+    public class AdminRideDto
+    {
+        public Guid Id { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string VehicleTypeId { get; set; } = string.Empty;
+
+        public AdminRidePartyDto Customer { get; set; } = new();
+        public AdminRidePartyDto? Driver { get; set; }
+        public AdminRideVehicleDto? Vehicle { get; set; }
+
+        public GeoPointDto Pickup { get; set; } = new();
+        public GeoPointDto Destination { get; set; } = new();
+
+        public int DistanceMeters { get; set; }
+        public int DurationSeconds { get; set; }
+
+        public string Currency { get; set; } = "BDT";
+        public int FareEstimateMinor { get; set; }
+        public int? FinalFareMinor { get; set; }
+        public int DiscountMinor { get; set; }
+        public string PaymentMethod { get; set; } = string.Empty;
+
+        public string? CancelledBy { get; set; }
+        public string? CancelReason { get; set; }
+
+        /// <summary>Human-readable problems flagged on this ride; empty when all is well.</summary>
+        public List<string> Problems { get; set; } = new();
+
+        public DateTime RequestedAt { get; set; }
+        public DateTime? StartedAt { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
+    }
+
     public class RecurringRideDto
     {
         public Guid Id { get; set; }

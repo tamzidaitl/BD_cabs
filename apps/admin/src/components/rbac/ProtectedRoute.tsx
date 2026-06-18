@@ -1,18 +1,16 @@
-'use client';
-
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { Navigate, useLocation } from 'react-router-dom';
 import { Spinner } from 'react-bootstrap';
-import { STAFF_ROLES, useAuthStore, type Permission } from '@bd-cabs/core';
+import { useAuthStore, type Permission } from '@bd-cabs/core';
 import { useCan } from './useCan';
 
 /**
- * Route-level guard. Wrap a page/segment to enforce:
- *   1. authentication (redirect to /login),
- *   2. staff-only access (non-staff roles bounced),
- *   3. an optional specific permission (else /unauthorized).
+ * Route-level guard. Enforces, in order:
+ *   1. authentication (→ /login),
+ *   2. an optional specific permission (→ /unauthorized).
  *
- * Waits for store hydration first to avoid a redirect flash on refresh.
+ * Login is open to all roles; pages that should be restricted declare a
+ * `permission`, which the per-role RBAC matrix resolves. Waits for store
+ * hydration first to avoid a redirect flash on reload.
  */
 export function ProtectedRoute({
   permission,
@@ -21,32 +19,28 @@ export function ProtectedRoute({
   permission?: Permission;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
+  const location = useLocation();
   const hydrated = useAuthStore((s) => s.hydrated);
   const session = useAuthStore((s) => s.session);
   const hasPermission = useCan(permission ?? ('__none__' as Permission));
   const permissionOk = permission ? hasPermission : true;
 
-  const isStaff = session ? STAFF_ROLES.includes(session.role) : false;
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!session) {
-      router.replace('/login');
-    } else if (!isStaff) {
-      // Authenticated but not staff — no admin access at all.
-      router.replace('/login?error=not-staff');
-    } else if (!permissionOk) {
-      router.replace('/unauthorized');
-    }
-  }, [hydrated, session, isStaff, permissionOk, router]);
-
-  if (!hydrated || !session || !isStaff || !permissionOk) {
+  if (!hydrated) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '60vh' }}>
+      <div
+        className="d-flex justify-content-center align-items-center"
+        style={{ minHeight: '60vh' }}
+      >
         <Spinner animation="border" variant="success" role="status" aria-label="Loading" />
       </div>
     );
+  }
+
+  if (!session) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  if (!permissionOk) {
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return <>{children}</>;

@@ -1,3 +1,4 @@
+using BdCabs.Api.Common;
 using BdCabs.Api.DTOs;
 using BdCabs.Api.Interfaces;
 using BdCabs.Api.Models;
@@ -7,19 +8,35 @@ using Microsoft.AspNetCore.Mvc;
 namespace BdCabs.Api.Controllers
 {
     /// <summary>
-    /// Coupon administration (API_ENDPOINTS.md §7). The admin frontend uses the
-    /// SuperAdmin sub-set: list all, create, change status.
+    /// Coupons (API_ENDPOINTS.md §7). SuperAdmin manages the catalogue; customers
+    /// list available coupons and validate/apply a code at booking/payment.
     /// </summary>
     [ApiController]
     [Route("api/v1/coupons")]
     public class CouponsController : ControllerBase
     {
         private readonly ICouponService _coupons;
+        private readonly ICurrentUser _me;
 
-        public CouponsController(ICouponService coupons)
+        public CouponsController(ICouponService coupons, ICurrentUser me)
         {
             _coupons = coupons;
+            _me = me;
         }
+
+        private Guid Uid => _me.UserId ?? throw AppException.Unauthorized("Not authenticated.");
+
+        // GET /api/v1/coupons  → coupons available to the current customer/corporate.
+        [HttpGet]
+        [Authorize(Roles = $"{Roles.Customer},{Roles.Corporate}")]
+        public async Task<ActionResult<List<CouponDto>>> ListAvailable()
+            => Ok(await _coupons.ListAvailable(Uid, _me.Role ?? Roles.Customer));
+
+        // POST /api/v1/coupons/apply  → validate a code against a prospective fare.
+        [HttpPost("apply")]
+        [Authorize(Roles = $"{Roles.Customer},{Roles.Corporate}")]
+        public async Task<ActionResult<ApplyCouponResultDto>> Apply([FromBody] ApplyCouponDto dto)
+            => Ok(await _coupons.Apply(Uid, dto));
 
         // GET /api/v1/coupons/admin  → endpoints.ts coupons.listAdmin()
         [HttpGet("admin")]

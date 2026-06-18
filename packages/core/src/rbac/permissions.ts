@@ -8,7 +8,9 @@
 export const Permission = {
   // Users & staff
   USERS_READ: 'users:read',
-  USERS_MANAGE_STATUS: 'users:manage-status', // activate/suspend/ban
+  USERS_ACTIVATE: 'users:activate', // activate a user (SupportAdmin + SuperAdmin)
+  USERS_MANAGE_STATUS: 'users:manage-status', // deactivate/suspend/ban (SuperAdmin)
+  USERS_DELETE: 'users:delete', // delete a user (SuperAdmin)
   STAFF_MANAGE: 'staff:manage', // create staff, change roles
 
   // Operations (Support Admin)

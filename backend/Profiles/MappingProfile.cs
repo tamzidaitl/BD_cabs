@@ -24,6 +24,27 @@ namespace BdCabs.Api.Profiles
                 .ForMember(d => d.UpdatedAt, o => o.Ignore())
                 .ForMember(d => d.ApplicableCities, o => o.MapFrom(s => s.ApplicableCities ?? new List<Guid>()))
                 .ForMember(d => d.ApplicableRoles, o => o.MapFrom(s => s.ApplicableRoles ?? new List<string>()));
+
+            // ---- Customer & Driver flows (flat read DTOs) ------------------
+            // Ride / RecurringRide are hand-mapped in RideService (nested GeoPoint).
+            CreateMap<DriverProfile, DriverProfileDto>();
+            CreateMap<SavedPlace, SavedPlaceDto>();
+            CreateMap<PaymentMethod, PaymentMethodDto>();
+            CreateMap<Payment, PaymentDto>();
+            CreateMap<Wallet, WalletDto>();
+            CreateMap<WalletTransaction, WalletTransactionDto>();
+            CreateMap<Review, ReviewDto>();
+            CreateMap<SupportTicket, SupportTicketDto>();
+            CreateMap<SafetyEvent, SafetyEventDto>();
+            CreateMap<Vehicle, VehicleDto>();
+            CreateMap<RentalAgreement, RentalAgreementDto>();
+            CreateMap<RentPayment, RentPaymentDto>();
+            CreateMap<DriverDocument, DriverDocumentDto>();
+
+            // ---- Fleet / Vehicle Owner flows -------------------------------
+            CreateMap<VehicleDocument, VehicleDocumentDto>();
+            CreateMap<FleetProfile, FleetProfileDto>();
+            CreateMap<FleetDriver, FleetDriverDto>();
         }
     }
 }

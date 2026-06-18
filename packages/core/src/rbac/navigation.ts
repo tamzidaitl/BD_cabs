@@ -19,7 +19,7 @@ export interface NavItem {
 import { Permission as P } from './permissions';
 
 export const ADMIN_NAV: NavItem[] = [
-  { label: 'Dashboard', href: '/', icon: 'LayoutDashboard', group: 'Overview' },
+  { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', group: 'Overview' },
 
   // Operations — Support Admin
   { label: 'Live Ops', href: '/ops', icon: 'Activity', permission: P.OPS_DASHBOARD, group: 'Operations' },

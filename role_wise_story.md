@@ -21,33 +21,33 @@
 
 ## 1. Customer / Passenger
 
-- Search for nearby vehicles
-- Book rides instantly or in advance
-- Schedule recurring rides
-- Track driver location in real time
-- Pay for rides (apply coupon for discount if available)
-- Manage payment methods / wallet
-- Cancel a ride (subject to cancellation policy / fee)
-- SOS / emergency button + share trip with contacts
-- Save favorite locations (home / work)
-- View ride history
-- Rate drivers
-- Raise a complaint / dispute a fare
+- [x] Search for nearby vehicles
+- [x] Book rides instantly or in advance
+- [x] Schedule recurring rides
+- [x] Track driver location in real time
+- [x] Pay for rides (apply coupon for discount if available)
+- [x] Manage payment methods / wallet
+- [x] Cancel a ride (subject to cancellation policy / fee)
+- [x] SOS / emergency button + share trip with contacts
+- [x] Save favorite locations (home / work)
+- [x] View ride history
+- [x] Rate drivers
+- [x] Raise a complaint / dispute a fare
 
 ## 2. Driver
 
-- Accept / reject ride requests
-- Navigate to pickup location
-- Start and complete trips
-- Manage availability (Online / Offline)
-- View earnings and withdraw payouts
-- Receive ratings; give ratings to Customer and to Vehicle Owner
-- Upload and renew personal documents (license, NID, etc.)
+- [x] Accept / reject ride requests
+- [x] Navigate to pickup location
+- [x] Start and complete trips
+- [x] Manage availability (Online / Offline)
+- [x] View earnings and withdraw payouts
+- [x] Receive ratings; give ratings to Customer and to Vehicle Owner
+- [x] Upload and renew personal documents (license, NID, etc.)
 
 **Rental relationship (rental drivers only):**
-- Rent a car from a Vehicle Owner (subject to Owner's approval and rental terms)
-- View assigned / rented vehicle details
-- Pay rent to the Vehicle Owner
+- [x] Rent a car from a Vehicle Owner (subject to Owner's approval and rental terms)
+- [x] View assigned / rented vehicle details
+- [x] Pay rent to the Vehicle Owner
 
 > Note: A driver is either an **owner-driver** (drives their own/the platform's car) or a **rental driver** (rents from a Vehicle Owner). The rental actions above apply only to rental drivers.
 
@@ -60,6 +60,7 @@
 - Receive rent payments from drivers
 - Monitor vehicle performance
 - Track vehicle
+- Upload vehicle Picture and Documents for verify
 - View revenue reports
 - Manage documents (vehicle papers, insurance, fitness — track expiry)
 - Activate / deactivate a vehicle
