@@ -22,6 +22,7 @@ namespace BdCabs.Api.DTOs
         public bool IsActive { get; set; }
         public bool ForRent { get; set; }
         public int? RentalPriceMinor { get; set; }
+        public string? RentalPeriod { get; set; }
         public string? RentalTerms { get; set; }
         public DateTime CreatedAt { get; set; }
     }

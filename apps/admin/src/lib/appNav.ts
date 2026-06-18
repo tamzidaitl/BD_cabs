@@ -103,7 +103,69 @@ export function placeAt(index: number): PresetPlace {
   return DHAKA_PLACES[index] ?? DHAKA_PLACES[0]!;
 }
 
+/** Great-circle distance between two coordinates, in metres (Haversine). */
+export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+/** The preset place closest to a coordinate, with its distance in metres. */
+export function nearestPlace(lat: number, lng: number): { place: PresetPlace; meters: number } {
+  let best = DHAKA_PLACES[0]!;
+  let bestMeters = Infinity;
+  for (const p of DHAKA_PLACES) {
+    const m = haversineMeters(lat, lng, p.lat, p.lng);
+    if (m < bestMeters) {
+      bestMeters = m;
+      best = p;
+    }
+  }
+  return { place: best, meters: bestMeters };
+}
+
+/**
+ * A human label for a dropped pin: the preset place name when the pin is very
+ * close, "Near X" when within ~1.2 km, else the rounded coordinates.
+ */
+export function describePoint(lat: number, lng: number): string {
+  const { place, meters } = nearestPlace(lat, lng);
+  if (meters < 250) return place.name;
+  if (meters < 1200) return `Near ${place.name}`;
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
+
 export const VEHICLE_TYPES = ['Bike', 'CNG', 'Car', 'Premium'] as const;
+
+/** Rental billing cadences an owner can advertise (matches backend RentalPeriod). */
+export const RENTAL_PERIODS = ['daily', 'weekly', 'monthly'] as const;
+export type RentalPeriod = (typeof RENTAL_PERIODS)[number];
+
+/** Per-unit label for a rent price, e.g. "monthly" → "/ month". */
+export function rentalPeriodSuffix(period: string | null | undefined): string {
+  switch (period) {
+    case 'daily':
+      return '/ day';
+    case 'weekly':
+      return '/ week';
+    case 'monthly':
+      return '/ month';
+    default:
+      return '/ period';
+  }
+}
+
+/**
+ * Standard, non-negotiable rental terms shown to both owners and drivers on every
+ * rental listing. Vehicle-specific terms are added on top of this.
+ */
+export const RENTAL_STANDARD_TERMS =
+  "Fuel and maintenance are the driver's responsibility, and the driver is liable for all accident-related costs.";
 
 /** Format minor units (poisha) as Bangladeshi Taka, e.g. 14178 → "৳141.78". */
 export function formatBDT(minor: number | null | undefined): string {

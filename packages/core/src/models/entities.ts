@@ -88,6 +88,8 @@ export interface Vehicle {
   isActive: boolean;
   forRent: boolean;
   rentalPriceMinor?: number;
+  /** Billing cadence for the rent — one of RentalPeriod (daily | weekly | monthly). */
+  rentalPeriod?: string;
   rentalTerms?: string;
   createdAt: ISODateString;
 }

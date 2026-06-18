@@ -20,6 +20,8 @@ namespace BdCabs.Api.DTOs
         /// <summary>Offer this vehicle for rent to drivers.</summary>
         public bool ForRent { get; set; }
         public int? RentalPriceMinor { get; set; }
+        /// <summary>Billing cadence — one of RentalPeriod (daily | weekly | monthly).</summary>
+        [MaxLength(20)] public string? RentalPeriod { get; set; }
         [MaxLength(280)] public string? RentalTerms { get; set; }
     }
 
@@ -38,6 +40,7 @@ namespace BdCabs.Api.DTOs
         public List<string>? PhotoUrls { get; set; }
         public bool? ForRent { get; set; }
         public int? RentalPriceMinor { get; set; }
+        [MaxLength(20)] public string? RentalPeriod { get; set; }
         [MaxLength(280)] public string? RentalTerms { get; set; }
     }
 

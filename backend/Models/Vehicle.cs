@@ -52,6 +52,8 @@ namespace BdCabs.Api.Models
         public bool ForRent { get; set; }
         /// <summary>Asking rent (minor units) for fixed-rent offers.</summary>
         public int? RentalPriceMinor { get; set; }
+        /// <summary>Billing cadence for the asking rent — one of <see cref="Models.RentalPeriod"/>.</summary>
+        [MaxLength(20)] public string? RentalPeriod { get; set; }
         [MaxLength(280)] public string? RentalTerms { get; set; }
 
         public DateTime CreatedAt { get; set; }

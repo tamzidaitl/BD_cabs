@@ -92,6 +92,17 @@ namespace BdCabs.Api.Models
         public static bool IsValid(string? s) => s is not null && All.Contains(s);
     }
 
+    /// <summary>Billing cadence an owner advertises a rental vehicle at.</summary>
+    public static class RentalPeriod
+    {
+        public const string Daily = "daily";
+        public const string Weekly = "weekly";
+        public const string Monthly = "monthly";
+
+        public static readonly string[] All = { Daily, Weekly, Monthly };
+        public static bool IsValid(string? s) => s is not null && All.Contains(s);
+    }
+
     public static class TicketCategory
     {
         public const string Complaint = "complaint";

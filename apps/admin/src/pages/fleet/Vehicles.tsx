@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, Col, Form, Row, Spinner } from 'react-bootstrap';
 import { ApiError, queryKeys, useServices, type Vehicle } from '@bd-cabs/core';
-import { formatBDT, takaToMinor, VEHICLE_TYPES } from '@/lib/appNav';
+import { formatBDT, RENTAL_PERIODS, RENTAL_STANDARD_TERMS, rentalPeriodSuffix, takaToMinor, VEHICLE_TYPES } from '@/lib/appNav';
 import { VehicleDocumentsPanel } from '@/components/VehicleDocumentsPanel';
 
 const VEHICLE_STATUSES = ['active', 'inactive', 'maintenance'] as const;
@@ -59,6 +59,7 @@ function RegisterCard({ onCreated }: { onCreated: () => void }) {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [forRent, setForRent] = useState(false);
   const [rentTaka, setRentTaka] = useState('');
+  const [rentPeriod, setRentPeriod] = useState<string>('monthly');
   const [rentalTerms, setRentalTerms] = useState('');
 
   function addFiles(list: FileList | null) {
@@ -90,12 +91,13 @@ function RegisterCard({ onCreated }: { onCreated: () => void }) {
         photoUrls: uploaded.map((u) => u.url),
         forRent,
         rentalPriceMinor: forRent && rentTaka ? takaToMinor(Number(rentTaka)) : undefined,
+        rentalPeriod: forRent ? rentPeriod : undefined,
         rentalTerms: forRent ? rentalTerms.trim() || undefined : undefined,
       });
     },
     onSuccess: () => {
       setPlate(''); setMake(''); setModel(''); setColor(''); setYear(''); setDescription(''); setPhotos([]); setPhotoError(null);
-      setForRent(false); setRentTaka(''); setRentalTerms('');
+      setForRent(false); setRentTaka(''); setRentPeriod('monthly'); setRentalTerms('');
       onCreated();
     },
   });
@@ -163,8 +165,16 @@ function RegisterCard({ onCreated }: { onCreated: () => void }) {
           </Col>
           {forRent && (
             <>
-              <Col xs={12}><Form.Control type="number" placeholder="Rent / period (৳)" value={rentTaka} onChange={(e) => setRentTaka(e.target.value)} /></Col>
-              <Col xs={12}><Form.Control as="textarea" rows={2} placeholder="Rental terms" value={rentalTerms} onChange={(e) => setRentalTerms(e.target.value)} /></Col>
+              <Col xs={12}>
+                <div className="alert alert-secondary py-2 px-3 mb-0 small">{RENTAL_STANDARD_TERMS}</div>
+              </Col>
+              <Col xs={7}><Form.Control type="number" placeholder="Rent amount (৳)" value={rentTaka} onChange={(e) => setRentTaka(e.target.value)} /></Col>
+              <Col xs={5}>
+                <Form.Select value={rentPeriod} onChange={(e) => setRentPeriod(e.target.value)} aria-label="Rental period">
+                  {RENTAL_PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </Form.Select>
+              </Col>
+              <Col xs={12}><Form.Control as="textarea" rows={2} placeholder="Additional terms (optional)" value={rentalTerms} onChange={(e) => setRentalTerms(e.target.value)} /></Col>
             </>
           )}
           <Col xs={12} className="d-grid">
@@ -183,6 +193,15 @@ function VehicleCard({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =
   const { endpoints } = useServices();
   const [showDocs, setShowDocs] = useState(false);
 
+  // Rental listing — editable after registration so an owner can offer (or stop
+  // offering) an existing vehicle for rent once it's verified.
+  const currentTaka = vehicle.rentalPriceMinor ? String(vehicle.rentalPriceMinor / 100) : '';
+  const currentPeriod = vehicle.rentalPeriod ?? 'monthly';
+  const [forRent, setForRent] = useState(vehicle.forRent);
+  const [rentTaka, setRentTaka] = useState(currentTaka);
+  const [rentPeriod, setRentPeriod] = useState(currentPeriod);
+  const [rentalTerms, setRentalTerms] = useState(vehicle.rentalTerms ?? '');
+
   const setStatus = useMutation({
     mutationFn: (status: string) => endpoints.vehicles.setStatus(vehicle.id, status),
     onSuccess: onChanged,
@@ -191,8 +210,21 @@ function VehicleCard({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =
     mutationFn: () => endpoints.vehicles.remove(vehicle.id),
     onSuccess: onChanged,
   });
+  const saveRental = useMutation({
+    mutationFn: () =>
+      endpoints.vehicles.update(vehicle.id, {
+        forRent,
+        rentalPriceMinor: forRent && rentTaka ? takaToMinor(Number(rentTaka)) : undefined,
+        rentalPeriod: forRent ? rentPeriod : undefined,
+        rentalTerms: forRent ? rentalTerms.trim() || undefined : undefined,
+      }),
+    onSuccess: onChanged,
+  });
 
   const verified = vehicle.verificationStatus === 'approved';
+  const rentalDirty =
+    forRent !== vehicle.forRent ||
+    (forRent && (rentTaka !== currentTaka || rentPeriod !== currentPeriod || rentalTerms !== (vehicle.rentalTerms ?? '')));
 
   return (
     <div className="border rounded p-3 mb-3">
@@ -208,7 +240,7 @@ function VehicleCard({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =
           <div className="fw-medium">{vehicle.make ?? vehicle.type} {vehicle.model ?? ''} · {vehicle.plateNumber}</div>
           <div className="text-muted small">
             {vehicle.type}{vehicle.color ? ` · ${vehicle.color}` : ''}{vehicle.year ? ` · ${vehicle.year}` : ''}
-            {vehicle.forRent && vehicle.rentalPriceMinor ? ` · ${formatBDT(vehicle.rentalPriceMinor)}/period` : ''}
+            {vehicle.forRent && vehicle.rentalPriceMinor ? ` · ${formatBDT(vehicle.rentalPriceMinor)} ${rentalPeriodSuffix(vehicle.rentalPeriod)}` : ''}
           </div>
         </div>
         <div className="text-end">
@@ -253,6 +285,49 @@ function VehicleCard({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =
           {remove.error instanceof ApiError ? remove.error.message : 'Could not remove vehicle.'}
         </Alert>
       )}
+
+      <div className="border-top mt-3 pt-3">
+        <Form.Check
+          type="switch"
+          id={`forRent-${vehicle.id}`}
+          label="Offer this vehicle for rent to drivers"
+          checked={forRent}
+          disabled={saveRental.isPending}
+          onChange={(e) => setForRent(e.target.checked)}
+        />
+        {forRent && (
+          <>
+            <div className="alert alert-secondary py-2 px-3 mt-2 mb-0 small">{RENTAL_STANDARD_TERMS}</div>
+            <Row className="g-2 mt-0">
+              <Col xs={7}>
+                <Form.Control size="sm" type="number" placeholder="Rent amount (৳)" value={rentTaka} onChange={(e) => setRentTaka(e.target.value)} />
+              </Col>
+              <Col xs={5}>
+                <Form.Select size="sm" value={rentPeriod} onChange={(e) => setRentPeriod(e.target.value)} aria-label="Rental period">
+                  {RENTAL_PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </Form.Select>
+              </Col>
+              <Col xs={12}>
+                <Form.Control size="sm" placeholder="Additional terms (optional)" value={rentalTerms} onChange={(e) => setRentalTerms(e.target.value)} />
+              </Col>
+            </Row>
+          </>
+        )}
+        {forRent && !verified && (
+          <div className="text-muted small mt-1">Drivers can see this once verification is approved.</div>
+        )}
+        <div className="mt-2 d-flex align-items-center gap-2">
+          <Button size="sm" variant="success" disabled={!rentalDirty || saveRental.isPending} onClick={() => saveRental.mutate()}>
+            {saveRental.isPending ? 'Saving…' : 'Save rental listing'}
+          </Button>
+          {saveRental.isSuccess && !rentalDirty && <span className="text-success small">Saved.</span>}
+        </div>
+        {saveRental.isError && (
+          <Alert variant="danger" className="py-1 px-2 mt-2 mb-0 small">
+            {saveRental.error instanceof ApiError ? saveRental.error.message : 'Could not update rental listing.'}
+          </Alert>
+        )}
+      </div>
 
       {showDocs && <VehicleDocumentsPanel vehicleId={vehicle.id} />}
     </div>

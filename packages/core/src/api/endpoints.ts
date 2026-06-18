@@ -137,6 +137,8 @@ export interface VehicleInput {
   photoUrls: string[];
   forRent?: boolean;
   rentalPriceMinor?: number;
+  /** One of RentalPeriod (daily | weekly | monthly). */
+  rentalPeriod?: string;
   rentalTerms?: string;
 }
 

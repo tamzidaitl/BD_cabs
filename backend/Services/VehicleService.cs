@@ -31,6 +31,8 @@ namespace BdCabs.Api.Services
                 throw AppException.BadRequest($"Invalid vehicle type. Allowed: {string.Join(", ", VehicleType.All)}.", "INVALID_VEHICLE_TYPE");
             if (dto.ForRent && dto.RentalPriceMinor is < 0)
                 throw AppException.BadRequest("Rental price cannot be negative.", "INVALID_RENTAL_PRICE");
+            if (dto.RentalPeriod is not null && !RentalPeriod.IsValid(dto.RentalPeriod))
+                throw AppException.BadRequest($"Invalid rental period. Allowed: {string.Join(", ", RentalPeriod.All)}.", "INVALID_RENTAL_PERIOD");
 
             var photos = NormalizePhotos(dto.PhotoUrls);
             if (photos.Count is < 1 or > 5)
@@ -56,6 +58,7 @@ namespace BdCabs.Api.Services
                 IsActive = false,
                 ForRent = dto.ForRent,
                 RentalPriceMinor = dto.RentalPriceMinor,
+                RentalPeriod = dto.ForRent ? dto.RentalPeriod ?? Models.RentalPeriod.Monthly : dto.RentalPeriod,
                 RentalTerms = dto.RentalTerms?.Trim(),
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -108,6 +111,15 @@ namespace BdCabs.Api.Services
             }
             if (dto.ForRent is bool forRent) vehicle.ForRent = forRent;
             if (dto.RentalPriceMinor is int price) vehicle.RentalPriceMinor = price;
+            if (dto.RentalPeriod is not null)
+            {
+                if (!RentalPeriod.IsValid(dto.RentalPeriod))
+                    throw AppException.BadRequest($"Invalid rental period. Allowed: {string.Join(", ", RentalPeriod.All)}.", "INVALID_RENTAL_PERIOD");
+                vehicle.RentalPeriod = dto.RentalPeriod;
+            }
+            // Offering a vehicle for rent without a stated cadence defaults to monthly.
+            if (dto.ForRent is true && vehicle.RentalPeriod is null)
+                vehicle.RentalPeriod = Models.RentalPeriod.Monthly;
             if (dto.RentalTerms is not null) vehicle.RentalTerms = dto.RentalTerms.Trim();
 
             vehicle.UpdatedAt = DateTime.UtcNow;

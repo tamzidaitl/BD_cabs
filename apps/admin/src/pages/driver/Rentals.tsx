@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, Col, Row, Spinner } from 'react-bootstrap';
 import { queryKeys, useServices, type RentalAgreement } from '@bd-cabs/core';
-import { formatBDT } from '@/lib/appNav';
+import { formatBDT, RENTAL_STANDARD_TERMS, rentalPeriodSuffix } from '@/lib/appNav';
 
 /**
  * Rental-driver tools: browse owner-offered vehicles, request one, and pay rent
@@ -30,14 +30,18 @@ export default function RentalsPage() {
       <Col xs={12} lg={6}>
         <Card className="border-0 shadow-sm">
           <Card.Body className="p-4">
-            <h1 className="h5 mb-3">Vehicles for rent</h1>
+            <h1 className="h5 mb-2">Vehicles for rent</h1>
+            <div className="alert alert-secondary py-2 px-3 small">{RENTAL_STANDARD_TERMS}</div>
             {available.isLoading && <Spinner animation="border" size="sm" variant="success" />}
             {available.data && available.data.length === 0 && <p className="text-muted mb-0">No vehicles are offered for rent right now.</p>}
             {available.data?.map((v) => (
               <div key={v.id} className="d-flex justify-content-between align-items-center border-bottom py-2">
                 <div>
                   <div className="fw-medium">{v.make ?? v.type} {v.model ?? ''} · {v.plateNumber}</div>
-                  <div className="text-muted small">{v.rentalPriceMinor ? `${formatBDT(v.rentalPriceMinor)} / period` : 'Terms on approval'}</div>
+                  <div className="text-muted small">
+                    {v.rentalPriceMinor ? `${formatBDT(v.rentalPriceMinor)} ${rentalPeriodSuffix(v.rentalPeriod)}` : 'Terms on approval'}
+                  </div>
+                  {v.rentalTerms && <div className="text-muted small fst-italic">{v.rentalTerms}</div>}
                 </div>
                 <Button size="sm" variant="outline-success" disabled={request.isPending} onClick={() => request.mutate(v.id)}>Request</Button>
               </div>
