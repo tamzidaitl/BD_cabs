@@ -29,8 +29,19 @@ namespace BdCabs.Api.Services
 
         public async Task<List<VehicleDto>> AvailableVehicles()
         {
+            // Cars a driver can rent: offered for rent, verified, not under maintenance,
+            // and not already committed to another driver. We deliberately do NOT require
+            // the rides "active" flag (IsActive) — a for-rent car that no one drives yet is
+            // naturally inactive, so requiring it would hide every fresh listing.
+            var rentedOut = _db.RentalAgreements
+                .Where(a => a.Status == RentalStatus.Active || a.Status == RentalStatus.Approved)
+                .Select(a => a.VehicleId);
+
             var vehicles = await _db.Vehicles.AsNoTracking()
-                .Where(v => v.ForRent && v.IsActive && v.VerificationStatus == VerificationStatus.Approved)
+                .Where(v => v.ForRent
+                    && v.VerificationStatus == VerificationStatus.Approved
+                    && v.Status != VehicleStatus.Maintenance
+                    && !rentedOut.Contains(v.Id))
                 .OrderByDescending(v => v.UpdatedAt)
                 .ToListAsync();
             return _mapper.Map<List<VehicleDto>>(vehicles);

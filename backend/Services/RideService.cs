@@ -20,6 +20,7 @@ namespace BdCabs.Api.Services
     {
         private const int NearbyRadiusMeters = 7000;
         private const int CancellationFeeMinor = 5000; // ৳50 once a driver is engaged
+        private const int ScheduledLeadMinutes = 15;   // a scheduled ride enters the driver feed this long before pickup
 
         private readonly AppDbContext _db;
         private readonly ICouponService _coupons;
@@ -322,8 +323,12 @@ namespace BdCabs.Api.Services
         public async Task<List<RideDto>> NearbyRequests(Guid driverUserId)
         {
             var profile = await _db.DriverProfiles.AsNoTracking().FirstOrDefaultAsync(d => d.UserId == driverUserId);
+            // Surface live requests plus scheduled rides whose pickup is now due (within the lead window).
+            var dueBy = DateTime.UtcNow.AddMinutes(ScheduledLeadMinutes);
             var open = await _db.Rides.AsNoTracking()
-                .Where(r => r.Status == RideStatus.Requested && r.DriverId == null)
+                .Where(r => r.DriverId == null
+                    && (r.Status == RideStatus.Requested
+                        || (r.Status == RideStatus.Scheduled && r.ScheduledFor != null && r.ScheduledFor <= dueBy)))
                 .OrderByDescending(r => r.RequestedAt)
                 .Take(50)
                 .ToListAsync();
