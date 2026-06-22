@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, Col, Form, Row, Spinner } from 'react-bootstrap';
-import { ApiError, queryKeys, useServices, type RentalAgreement } from '@bd-cabs/core';
-import { formatBDT, takaToMinor } from '@/lib/appNav';
+import { ApiError, queryKeys, useServices, type FleetDriver, type RentalAgreement } from '@bd-cabs/core';
+import { formatBDT, takaToMinor, rentalPeriodSuffix } from '@/lib/appNav';
+import { Avatar } from '@/components/Avatar';
 
 /**
  * Fleet roster + rental request management. The owner invites/removes drivers,
@@ -62,18 +63,82 @@ function RosterCard() {
         {drivers.isLoading && <Spinner animation="border" size="sm" variant="success" />}
         {drivers.data && drivers.data.length === 0 && <p className="text-muted mb-0">No drivers in your fleet yet.</p>}
         {drivers.data?.map((d) => (
-          <div key={d.id} className="d-flex justify-content-between align-items-center border-bottom py-2">
-            <div>
-              <div className="fw-medium">{d.driver?.fullName ?? d.driverId.slice(0, 8)}</div>
-              <div className="text-muted small">{d.driver?.email ?? d.driver?.phone ?? ''}</div>
-            </div>
-            <Button size="sm" variant="outline-danger" disabled={remove.isPending} onClick={() => remove.mutate(d.driverId)}>
-              Remove
-            </Button>
-          </div>
+          <DriverRow key={d.id} driver={d} onRemove={() => remove.mutate(d.driverId)} removing={remove.isPending} />
         ))}
       </Card.Body>
     </Card>
+  );
+}
+
+/** A roster driver row with remove + an inline owner→driver rating (one standing review). */
+function DriverRow({ driver, onRemove, removing }: { driver: FleetDriver; onRemove: () => void; removing: boolean }) {
+  const qc = useQueryClient();
+  const { endpoints } = useServices();
+  const [open, setOpen] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+
+  const submit = useMutation({
+    mutationFn: () =>
+      endpoints.fleet.reviewDriver({ driverId: driver.driverId, rating, comment: comment.trim() || undefined }),
+    onSuccess: () => {
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: queryKeys.fleet.drivers() });
+    },
+  });
+
+  return (
+    <div className="border-bottom py-2">
+      <div className="d-flex justify-content-between align-items-center">
+        <div>
+          <div className="fw-medium">{driver.driver?.fullName ?? driver.driverId.slice(0, 8)}</div>
+          <div className="text-muted small">{driver.driver?.email ?? driver.driver?.phone ?? ''}</div>
+        </div>
+        <div className="d-flex gap-2">
+          <Button size="sm" variant="outline-success" onClick={() => setOpen((o) => !o)}>
+            {open ? 'Cancel' : 'Rate'}
+          </Button>
+          <Button size="sm" variant="outline-danger" disabled={removing} onClick={onRemove}>
+            Remove
+          </Button>
+        </div>
+      </div>
+
+      {submit.isError && (
+        <Alert variant="danger" className="py-1 px-2 my-2 small">
+          {submit.error instanceof ApiError ? submit.error.message : 'Could not save review.'}
+        </Alert>
+      )}
+
+      {open && (
+        <div className="mt-2">
+          <div className="d-flex gap-1 mb-2">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <Button
+                key={n}
+                size="sm"
+                variant={n <= rating ? 'warning' : 'outline-secondary'}
+                onClick={() => setRating(n)}
+                aria-label={`${n} star${n === 1 ? '' : 's'}`}
+              >
+                ★
+              </Button>
+            ))}
+          </div>
+          <Form.Control
+            as="textarea"
+            rows={2}
+            className="mb-2"
+            placeholder="Comment (optional)"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+          />
+          <Button size="sm" variant="success" disabled={submit.isPending} onClick={() => submit.mutate()}>
+            {submit.isPending ? 'Saving…' : 'Submit review'}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -102,14 +167,18 @@ function RequestRow({ agreement }: { agreement: RentalAgreement }) {
   const [rentType, setRentType] = useState<'fixed' | 'revenue-share'>('fixed');
   const [rentTaka, setRentTaka] = useState('');
   const [sharePct, setSharePct] = useState('');
+  const [endDate, setEndDate] = useState(agreement.endDate ? agreement.endDate.slice(0, 10) : '');
   const [showReceived, setShowReceived] = useState(false);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: queryKeys.fleet.rentalRequests() });
 
-  const termsBody = () =>
-    rentType === 'fixed'
+  const termsBody = () => ({
+    ...(rentType === 'fixed'
       ? { rentType, rentAmountMinor: rentTaka ? takaToMinor(Number(rentTaka)) : 0 }
-      : { rentType, revenueSharePct: sharePct ? Number(sharePct) : 0 };
+      : { rentType, revenueSharePct: sharePct ? Number(sharePct) : 0 }),
+    // The rental auto-ends (and clears from the driver's active list) once this date passes.
+    ...(endDate ? { endDate: new Date(endDate).toISOString() } : {}),
+  });
 
   const approve = useMutation({
     mutationFn: () => endpoints.fleet.approveRental(agreement.id, termsBody()),
@@ -141,20 +210,54 @@ function RequestRow({ agreement }: { agreement: RentalAgreement }) {
       ) : (
         <Col xs="auto"><Form.Control size="sm" type="number" placeholder="Owner %" value={sharePct} onChange={(e) => setSharePct(e.target.value)} style={{ width: 120 }} /></Col>
       )}
+      <Col xs="auto">
+        <Form.Control size="sm" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} aria-label="Rental end date" title="Rental end date (auto-ends the rental)" style={{ width: 160 }} />
+      </Col>
     </Row>
   );
 
   return (
     <div className="border-bottom py-3">
-      <div className="d-flex justify-content-between align-items-center">
-        <div>
-          <div className="fw-medium">Driver {agreement.driverId.slice(0, 8)} · Vehicle {agreement.vehicleId.slice(0, 8)}</div>
-          <div className="text-muted small">
-            {agreement.rentType
-              ? agreement.rentType === 'fixed'
-                ? `Fixed ${formatBDT(agreement.rentAmountMinor ?? 0)}/period`
-                : `Revenue share ${agreement.revenueSharePct}%`
-              : 'Terms not set'}
+      <div className="d-flex justify-content-between align-items-start">
+        <div className="d-flex gap-2">
+          <Avatar user={agreement.driver ? { fullName: agreement.driver.fullName, avatarUrl: agreement.driver.avatarUrl } : null} size={40} />
+          <div>
+            <div className="fw-medium">{agreement.driver?.fullName ?? `Driver ${agreement.driverId.slice(0, 8)}`}</div>
+            <div className="text-muted small d-flex flex-wrap align-items-center gap-2">
+              {agreement.driver?.phone && <span>{agreement.driver.phone}</span>}
+              {agreement.driver?.rating != null && (
+                <span className="text-warning" aria-label={`Rated ${agreement.driver.rating.toFixed(1)} out of 5`}>
+                  ★ <span className="text-muted">{agreement.driver.rating.toFixed(1)}</span>
+                </span>
+              )}
+            </div>
+            <div className="d-flex align-items-center gap-2 mt-1">
+              {agreement.vehicle?.photoUrl && (
+                <img
+                  src={agreement.vehicle.photoUrl}
+                  alt={agreement.vehicle.plateNumber}
+                  className="rounded border"
+                  style={{ width: 48, height: 36, objectFit: 'cover' }}
+                />
+              )}
+              <div className="text-muted small">
+                <div>
+                  {agreement.vehicle
+                    ? `${agreement.vehicle.make ?? agreement.vehicle.type} ${agreement.vehicle.model ?? ''} · ${agreement.vehicle.plateNumber}`
+                    : `Vehicle ${agreement.vehicleId.slice(0, 8)}`}
+                </div>
+                <div>
+                  {agreement.vehicle?.rentalPriceMinor != null && (
+                    <span className="me-2">Listed {formatBDT(agreement.vehicle.rentalPriceMinor)} {rentalPeriodSuffix(agreement.vehicle.rentalPeriod)}</span>
+                  )}
+                  {agreement.rentType
+                    ? agreement.rentType === 'fixed'
+                      ? `Agreed ${formatBDT(agreement.rentAmountMinor ?? 0)}/period`
+                      : `Revenue share ${agreement.revenueSharePct}%`
+                    : 'Terms not set'}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <Badge bg={statusVariant} text={isPending ? 'dark' : undefined}>{agreement.status}</Badge>

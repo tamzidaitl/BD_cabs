@@ -38,6 +38,12 @@ builder.Services.AddScoped<ICouponService, CouponService>();
 builder.Services.AddScoped<IOpsService, OpsService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 
+// Road routing (OSRM) — real road distance/time for quotes, like Uber/Pathao.
+builder.Services.AddHttpClient<IRoutingService, OsrmRoutingService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(4); // keep the booking flow snappy; fall back on timeout
+});
+
 // Customer & Driver flows
 builder.Services.AddScoped<IRideService, RideService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
@@ -52,6 +58,9 @@ builder.Services.AddScoped<IRentalService, RentalService>();
 // Fleet / Vehicle Owner flows
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IFleetService, FleetService>();
+
+// Corporate Client flows
+builder.Services.AddScoped<ICorporateService, CorporateService>();
 
 // ---- Authentication / Authorization ---------------------------------------
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

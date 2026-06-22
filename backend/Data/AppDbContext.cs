@@ -41,6 +41,14 @@ namespace BdCabs.Api.Data
         public DbSet<FleetProfile> FleetProfiles => Set<FleetProfile>();
         public DbSet<FleetDriver> FleetDrivers => Set<FleetDriver>();
 
+        // ---- Corporate Client flows ----
+        public DbSet<CorporateProfile> CorporateProfiles => Set<CorporateProfile>();
+        public DbSet<CorporateEmployee> CorporateEmployees => Set<CorporateEmployee>();
+        public DbSet<CorporateBooking> CorporateBookings => Set<CorporateBooking>();
+        public DbSet<CorporateRecurringRide> CorporateRecurringRides => Set<CorporateRecurringRide>();
+        public DbSet<CorporateRentalContract> CorporateRentalContracts => Set<CorporateRentalContract>();
+        public DbSet<CorporateRentalDriver> CorporateRentalDrivers => Set<CorporateRentalDriver>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -105,8 +113,14 @@ namespace BdCabs.Api.Data
             modelBuilder.Entity<Review>(e =>
             {
                 e.HasIndex(r => r.RevieweeId);
-                // One review per (ride, reviewer, target) — no double-rating.
+                // One review per (ride, reviewer, target) — no double-rating. Rental
+                // reviews leave RideId null; Postgres treats NULLs as distinct, so this
+                // only constrains ride-based reviews.
                 e.HasIndex(r => new { r.RideId, r.ReviewerId, r.RevieweeType }).IsUnique();
+                // The rental-review counterpart: one per (agreement, reviewer, target).
+                e.HasIndex(r => new { r.RentalAgreementId, r.ReviewerId, r.RevieweeType }).IsUnique();
+                // Moderation queue filters by status.
+                e.HasIndex(r => r.Status);
             });
 
             modelBuilder.Entity<SupportTicket>(e => e.HasIndex(t => t.UserId));
@@ -155,6 +169,46 @@ namespace BdCabs.Api.Data
                 e.HasIndex(f => f.OwnerId);
                 // One membership row per (owner, driver) pair.
                 e.HasIndex(f => new { f.OwnerId, f.DriverId }).IsUnique();
+            });
+
+            // ---- Corporate Client flows ------------------------------------
+            modelBuilder.Entity<CorporateProfile>(e =>
+            {
+                e.HasIndex(p => p.UserId).IsUnique();
+                e.HasOne(p => p.User)
+                    .WithOne()
+                    .HasForeignKey<CorporateProfile>(p => p.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<CorporateEmployee>(e => e.HasIndex(c => c.CorporateId));
+
+            modelBuilder.Entity<CorporateBooking>(e =>
+            {
+                e.HasIndex(b => b.CorporateId);
+                e.HasIndex(b => b.EmployeeId);
+                e.HasIndex(b => b.Status);
+            });
+
+            modelBuilder.Entity<CorporateRecurringRide>(e =>
+            {
+                e.HasIndex(r => r.CorporateId);
+                // DaysOfWeek (List<int>) maps to a native int[] column via Npgsql.
+            });
+
+            modelBuilder.Entity<CorporateRentalContract>(e =>
+            {
+                e.HasIndex(c => c.CorporateId);
+                e.HasIndex(c => c.OwnerId);
+                e.HasIndex(c => c.VehicleId);
+                e.HasIndex(c => c.Status);
+            });
+
+            modelBuilder.Entity<CorporateRentalDriver>(e =>
+            {
+                e.HasIndex(d => d.ContractId);
+                e.HasIndex(d => d.OwnerId);
+                e.HasIndex(d => d.DriverId);
             });
         }
     }

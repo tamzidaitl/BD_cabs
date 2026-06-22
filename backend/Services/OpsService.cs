@@ -93,8 +93,15 @@ namespace BdCabs.Api.Services
                 .GroupBy(e => e.RideId!.Value)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            // Settled charges for this page, so the console can show paid/unpaid.
+            var paidByRide = (await _db.Payments.AsNoTracking()
+                    .Where(p => rideIds.Contains(p.RideId) && p.Status == PaymentStatus.Paid)
+                    .ToListAsync())
+                .GroupBy(p => p.RideId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.CreatedAt).First());
+
             var items = rides
-                .Select(r => MapAdminRide(r, users, vehicles, eventsByRide))
+                .Select(r => MapAdminRide(r, users, vehicles, eventsByRide, paidByRide))
                 .ToList();
 
             return PagedResult<AdminRideDto>.Create(items, totalCount, page, pageSize);
@@ -104,11 +111,13 @@ namespace BdCabs.Api.Services
             Ride r,
             IReadOnlyDictionary<Guid, User> users,
             IReadOnlyDictionary<Guid, Vehicle> vehicles,
-            IReadOnlyDictionary<Guid, List<SafetyEvent>> eventsByRide)
+            IReadOnlyDictionary<Guid, List<SafetyEvent>> eventsByRide,
+            IReadOnlyDictionary<Guid, Payment> paidByRide)
         {
             var customer = users.GetValueOrDefault(r.CustomerId);
             var driver = r.DriverId is Guid did ? users.GetValueOrDefault(did) : null;
             var vehicle = r.VehicleId is Guid vid ? vehicles.GetValueOrDefault(vid) : null;
+            var paid = paidByRide.GetValueOrDefault(r.Id);
 
             // Surface anything an operator would want to act on, in priority order.
             var problems = new List<string>();
@@ -127,8 +136,15 @@ namespace BdCabs.Api.Services
             }
             if (r.Status == RideStatus.NoDriverFound)
                 problems.Add("No driver found");
+            // A driver accepted but has no active vehicle, so the trip is running
+            // without a car on record (accept copies the driver's ActiveVehicleId).
+            if (driver != null && vehicle == null && ActiveRideStatuses.Contains(r.Status))
+                problems.Add("Driver has no vehicle assigned");
             if (vehicle != null && vehicle.VerificationStatus != VerificationStatus.Approved)
                 problems.Add("Assigned car is not verified");
+            // A finished trip whose charge never settled — revenue is outstanding.
+            if (r.Status == RideStatus.Completed && paid is null)
+                problems.Add("Payment outstanding");
 
             return new AdminRideDto
             {
@@ -158,6 +174,9 @@ namespace BdCabs.Api.Services
                 FinalFareMinor = r.FinalFareMinor,
                 DiscountMinor = r.DiscountMinor,
                 PaymentMethod = r.PaymentMethod,
+                PaymentStatus = paid is not null ? PaymentStatus.Paid : Models.PaymentStatus.Pending,
+                AmountPaidMinor = paid?.AmountMinor,
+                PaidAt = paid?.CreatedAt,
                 CancelledBy = r.CancelledBy,
                 CancelReason = r.CancelReason,
                 Problems = problems,

@@ -253,7 +253,7 @@ namespace BdCabs.Api.Data
                     DistanceMeters = 2600, DurationSeconds = 540,
                     Currency = "BDT", FareEstimateMinor = 18000,
                     PaymentMethod = PaymentMethodType.Cash,
-                    StartOtp = "123456",
+                    StartOtp = Random.Shared.Next(100000, 999999).ToString(),
                     RequestedAt = now.AddMinutes(-20),
                     AcceptedAt = now.AddMinutes(-18),
                     ArrivedAt = now.AddMinutes(-14),

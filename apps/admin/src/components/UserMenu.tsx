@@ -1,9 +1,15 @@
-import { forwardRef, type HTMLAttributes } from 'react';
+import { forwardRef, type ComponentType, type HTMLAttributes } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Dropdown } from 'react-bootstrap';
+import * as Icons from 'lucide-react';
 import { LayoutDashboard, LogOut, Settings } from 'lucide-react';
-import { useAuthStore, useCurrentUser, useServices } from '@bd-cabs/core';
+import { STAFF_ROLES, useAuthStore, useCurrentUser, useServices } from '@bd-cabs/core';
+import { portalConfigForRole } from '@/lib/appNav';
 import { Avatar } from './Avatar';
+
+type IconCmp = ComponentType<{ size?: number; className?: string }>;
+const icon = (name: string): IconCmp =>
+  (Icons[name as keyof typeof Icons] ?? Icons.Circle) as IconCmp;
 
 // Custom toggle so the avatar itself is the clickable trigger (no default caret).
 const AvatarToggle = forwardRef<HTMLButtonElement, HTMLAttributes<HTMLButtonElement>>(
@@ -22,8 +28,10 @@ AvatarToggle.displayName = 'AvatarToggle';
 
 /**
  * Authenticated account menu: the profile avatar opening a dropdown with the
- * user's identity, a Dashboard shortcut, and sign-out. Fetches /auth/me via the
- * shared hook to get the name + photo.
+ * user's identity, navigation, and sign-out. Fetches /auth/me via the shared
+ * hook to get the name + photo. Staff see a Dashboard shortcut; portal roles
+ * (customer/driver/fleet owner) instead see "My menu" linking to their own
+ * pages, since the staff dashboard isn't theirs to reach.
  */
 export function UserMenu() {
   const navigate = useNavigate();
@@ -31,6 +39,10 @@ export function UserMenu() {
   const clear = useAuthStore((s) => s.clear);
   const { endpoints } = useServices();
   const { data: user } = useCurrentUser();
+
+  const role = session?.role;
+  const isStaff = !!role && STAFF_ROLES.includes(role);
+  const portal = portalConfigForRole(role);
 
   async function handleLogout() {
     try {
@@ -61,10 +73,26 @@ export function UserMenu() {
           <span className="badge text-bg-light mt-1">{session?.role}</span>
         </div>
         <Dropdown.Divider />
-        <Dropdown.Item as={Link} to="/dashboard">
-          <LayoutDashboard size={16} className="me-2" />
-          Dashboard
-        </Dropdown.Item>
+        {isStaff ? (
+          <Dropdown.Item as={Link} to="/dashboard">
+            <LayoutDashboard size={16} className="me-2" />
+            Dashboard
+          </Dropdown.Item>
+        ) : portal ? (
+          <>
+            <Dropdown.Header>My menu</Dropdown.Header>
+            {portal.nav.map((item) => {
+              const Icon = icon(item.icon);
+              return (
+                <Dropdown.Item key={item.to} as={Link} to={item.to}>
+                  <Icon size={16} className="me-2" />
+                  {item.label}
+                </Dropdown.Item>
+              );
+            })}
+            <Dropdown.Divider />
+          </>
+        ) : null}
         <Dropdown.Item as={Link} to="/account-settings">
           <Settings size={16} className="me-2" />
           Account settings

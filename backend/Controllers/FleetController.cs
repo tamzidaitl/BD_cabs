@@ -85,9 +85,46 @@ namespace BdCabs.Api.Controllers
         public async Task<ActionResult<List<SettlementDto>>> Settlements()
             => Ok(await _fleet.Settlements(Uid));
 
+        // ---- Corporate rental contracts (Corporate ↔ Vehicle Owner) ----
+        [HttpGet("corporate-rentals")]
+        public async Task<ActionResult<List<CorporateRentalContractDto>>> CorporateRentals()
+            => Ok(await _fleet.CorporateRentalRequests(Uid));
+
+        [HttpPost("corporate-rentals/{id:guid}/approve")]
+        public async Task<ActionResult<CorporateRentalContractDto>> ApproveCorporateRental(Guid id, [FromBody] ApproveCorporateRentalDto dto)
+            => Ok(await _fleet.ApproveCorporateRental(Uid, id, dto));
+
+        [HttpPost("corporate-rentals/{id:guid}/reject")]
+        public async Task<ActionResult<CorporateRentalContractDto>> RejectCorporateRental(Guid id, [FromBody] RejectRentalDto dto)
+            => Ok(await _fleet.RejectCorporateRental(Uid, id, dto));
+
+        [HttpPost("corporate-rentals/{id:guid}/activate")]
+        public async Task<ActionResult<CorporateRentalContractDto>> ActivateCorporateRental(Guid id)
+            => Ok(await _fleet.ActivateCorporateRental(Uid, id));
+
+        [HttpPost("corporate-rentals/{id:guid}/complete")]
+        public async Task<ActionResult<CorporateRentalContractDto>> CompleteCorporateRental(Guid id)
+            => Ok(await _fleet.CompleteCorporateRental(Uid, id));
+
+        [HttpPost("corporate-rentals/{id:guid}/assign-driver")]
+        public async Task<ActionResult<CorporateRentalContractDto>> AssignDriver(Guid id, [FromBody] AssignRentalDriverDto dto)
+            => Ok(await _fleet.AssignDriver(Uid, id, dto));
+
+        [HttpDelete("corporate-rentals/{id:guid}/drivers/{driverId:guid}")]
+        public async Task<ActionResult<CorporateRentalContractDto>> UnassignDriver(Guid id, Guid driverId)
+            => Ok(await _fleet.UnassignDriver(Uid, id, driverId));
+
         // ---- Reviews ----
         [HttpGet("reviews")]
         public async Task<ActionResult<List<ReviewDto>>> Reviews()
             => Ok(await _fleet.ReviewsReceived(Uid));
+
+        [HttpPost("driver-reviews")]
+        public async Task<ActionResult<ReviewDto>> ReviewDriver([FromBody] FleetDriverReviewInputDto dto)
+            => StatusCode(StatusCodes.Status201Created, await _fleet.ReviewDriver(Uid, dto));
+
+        [HttpPost("corporate-reviews")]
+        public async Task<ActionResult<ReviewDto>> ReviewCorporate([FromBody] FleetCorporateReviewInputDto dto)
+            => StatusCode(StatusCodes.Status201Created, await _fleet.CreateCorporateReview(Uid, dto));
     }
 }

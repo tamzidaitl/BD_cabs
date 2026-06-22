@@ -33,9 +33,28 @@ namespace BdCabs.Api.Controllers
             return StatusCode(StatusCodes.Status201Created, review);
         }
 
+        /// <summary>The signed-in user's own rating summary + received review history.</summary>
+        [HttpGet("me")]
+        public async Task<ActionResult<ProfileReviewsDto>> Me()
+            => Ok(await _reviews.MyReviews(Uid));
+
         [HttpGet("ride/{rideId:guid}")]
         public async Task<ActionResult<List<ReviewDto>>> ForRide(Guid rideId)
             => Ok(await _reviews.ForRide(Uid, Role, rideId));
+
+        /// <summary>A rental driver rates the rented car or its owner after the agreement ended.</summary>
+        [HttpPost("rental/{agreementId:guid}")]
+        [Authorize(Roles = Roles.Driver)]
+        public async Task<ActionResult<ReviewDto>> CreateRentalReview(Guid agreementId, [FromBody] RentalReviewCreateDto dto)
+        {
+            var review = await _reviews.CreateRentalReview(Uid, agreementId, dto);
+            return StatusCode(StatusCodes.Status201Created, review);
+        }
+
+        /// <summary>Reviews left on a rental agreement (its driver/owner, or staff).</summary>
+        [HttpGet("rental/{agreementId:guid}")]
+        public async Task<ActionResult<List<ReviewDto>>> ForRentalAgreement(Guid agreementId)
+            => Ok(await _reviews.ForRentalAgreement(Uid, Role, agreementId));
 
         [HttpGet("user/{userId:guid}")]
         public async Task<ActionResult<List<ReviewDto>>> ForUser(Guid userId)

@@ -127,4 +127,40 @@ namespace BdCabs.Api.DTOs
         public int OwnerCutMinor { get; set; }
         public int TotalMinor { get; set; }
     }
+
+    // ---- Corporate rental contracts (owner side) ------------------------------
+
+    /// <summary>Body for POST /fleet/corporate-rentals/{id}/approve — set the rate &amp; terms.</summary>
+    public class ApproveCorporateRentalDto
+    {
+        /// <summary>Rate per billing period (minor units).</summary>
+        [Range(0, int.MaxValue)] public int RateMinor { get; set; }
+        /// <summary>Billing cadence — one of RentalPeriod (daily | weekly | monthly). Optional override.</summary>
+        public string? Period { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        [MaxLength(280)] public string? Note { get; set; }
+    }
+
+    /// <summary>Body for POST /fleet/corporate-rentals/{id}/assign-driver.</summary>
+    public class AssignRentalDriverDto
+    {
+        [Required] public Guid DriverId { get; set; }
+    }
+
+    /// <summary>Body for POST /fleet/corporate-reviews — an owner rates a Corporate Client.</summary>
+    public class FleetCorporateReviewInputDto
+    {
+        [Required] public Guid CorporateId { get; set; }
+        [Range(1, 5)] public int Rating { get; set; }
+        [MaxLength(1000)] public string? Comment { get; set; }
+    }
+
+    /// <summary>Body for POST /fleet/driver-reviews — an owner rates one of their drivers.</summary>
+    public class FleetDriverReviewInputDto
+    {
+        [Required] public Guid DriverId { get; set; }
+        [Range(1, 5)] public int Rating { get; set; }
+        [MaxLength(1000)] public string? Comment { get; set; }
+    }
 }

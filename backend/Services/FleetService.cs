@@ -148,11 +148,45 @@ namespace BdCabs.Api.Services
 
         public async Task<List<RentalAgreementDto>> RentalRequests(Guid ownerId)
         {
+            // End any of this owner's rentals whose end date has passed before listing.
+            await RentalLifecycle.EndExpired(_db, a => a.OwnerId == ownerId, DateTime.UtcNow);
+
             var agreements = await _db.RentalAgreements.AsNoTracking()
                 .Where(a => a.OwnerId == ownerId)
                 .OrderByDescending(a => a.RequestedAt)
                 .ToListAsync();
-            return _mapper.Map<List<RentalAgreementDto>>(agreements);
+
+            // Enrich each request with the renting driver's profile (name, phone,
+            // avatar, rating) so the owner sees who wants/rents the car.
+            var driverIds = agreements.Select(a => a.DriverId).Distinct().ToList();
+            var users = await _db.Users.AsNoTracking()
+                .Where(u => driverIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id);
+            var ratings = await _db.DriverProfiles.AsNoTracking()
+                .Where(d => driverIds.Contains(d.UserId))
+                .ToDictionaryAsync(d => d.UserId, d => d.Rating);
+
+            // …and with the rented car (photo + the owner's listed price/period), so the
+            // request row shows which vehicle and its asking rent even before terms are set.
+            var vehicleSummaries = await LoadRentalVehicleSummaries(agreements);
+
+            return agreements.Select(a =>
+            {
+                var dto = _mapper.Map<RentalAgreementDto>(a);
+                if (users.TryGetValue(a.DriverId, out var u))
+                {
+                    dto.Driver = new RentalDriverDto
+                    {
+                        Id = u.Id,
+                        FullName = u.FullName,
+                        Phone = u.Phone,
+                        AvatarUrl = u.AvatarUrl,
+                        Rating = ratings.TryGetValue(a.DriverId, out var r) ? r : null,
+                    };
+                }
+                dto.Vehicle = vehicleSummaries.TryGetValue(a.VehicleId, out var v) ? v : null;
+                return dto;
+            }).ToList();
         }
 
         public async Task<RentalAgreementDto> ApproveRental(Guid ownerId, Guid agreementId, ApproveRentalDto dto)
@@ -334,14 +368,343 @@ namespace BdCabs.Api.Services
         public async Task<List<ReviewDto>> ReviewsReceived(Guid ownerId)
         {
             var reviews = await _db.Reviews.AsNoTracking()
-                .Where(r => r.RevieweeId == ownerId && r.RevieweeType == ReviewTargetType.Owner)
+                .Where(r => r.RevieweeId == ownerId && r.RevieweeType == ReviewTargetType.Owner
+                            && r.Status == ReviewStatus.Visible)
                 .OrderByDescending(r => r.CreatedAt)
                 .Take(100)
                 .ToListAsync();
             return _mapper.Map<List<ReviewDto>>(reviews);
         }
 
+        /// <summary>
+        /// An owner rates one of their drivers (Fleet/Vehicle Owner ↔ Driver). Earned
+        /// by a working relationship — the driver is/was in the owner's fleet or has
+        /// rented one of the owner's vehicles. One standing, editable review per pair.
+        /// </summary>
+        public async Task<ReviewDto> ReviewDriver(Guid ownerId, FleetDriverReviewInputDto dto)
+        {
+            if (dto.Rating < 1 || dto.Rating > 5)
+                throw AppException.BadRequest("Rating must be between 1 and 5.", "INVALID_RATING");
+
+            bool related = await _db.FleetDrivers.AnyAsync(f => f.OwnerId == ownerId && f.DriverId == dto.DriverId)
+                           || await _db.RentalAgreements.AnyAsync(a => a.OwnerId == ownerId && a.DriverId == dto.DriverId);
+            if (!related)
+                throw AppException.Unprocessable("NO_DRIVER_RELATIONSHIP",
+                    "You can review a driver only after they have joined your fleet or rented your vehicle.");
+
+            var now = DateTime.UtcNow;
+            // One standing review per (owner, driver): update in place if it exists.
+            var review = await _db.Reviews.FirstOrDefaultAsync(r =>
+                r.ReviewerId == ownerId && r.RevieweeId == dto.DriverId && r.RevieweeType == ReviewTargetType.Driver);
+
+            if (review is null)
+            {
+                review = new Review
+                {
+                    Id = Guid.NewGuid(),
+                    // Not tied to a ride; a synthetic id keeps the unique
+                    // (RideId, ReviewerId, RevieweeType) index collision-free.
+                    RideId = Guid.NewGuid(),
+                    ReviewerId = ownerId,
+                    RevieweeId = dto.DriverId,
+                    RevieweeType = ReviewTargetType.Driver,
+                    CreatedAt = now,
+                };
+                _db.Reviews.Add(review);
+            }
+            review.Rating = dto.Rating;
+            review.Comment = dto.Comment?.Trim();
+            review.UpdatedAt = now;
+            await _db.SaveChangesAsync();
+
+            // Refresh the driver's aggregate rating from all visible reviews about them.
+            var avg = await _db.Reviews.AsNoTracking()
+                .Where(r => r.RevieweeId == dto.DriverId && r.RevieweeType == ReviewTargetType.Driver
+                            && r.Status == ReviewStatus.Visible)
+                .AverageAsync(r => (double?)r.Rating);
+            var profile = await _db.DriverProfiles.FirstOrDefaultAsync(d => d.UserId == dto.DriverId);
+            if (profile is not null)
+            {
+                profile.Rating = avg.HasValue ? Math.Round(avg.Value, 2) : 0;
+                profile.UpdatedAt = now;
+                await _db.SaveChangesAsync();
+            }
+
+            return _mapper.Map<ReviewDto>(review);
+        }
+
+        // ---- Corporate rental contracts (Corporate ↔ Vehicle Owner) -----------
+
+        public async Task<List<CorporateRentalContractDto>> CorporateRentalRequests(Guid ownerId)
+        {
+            var contracts = await _db.CorporateRentalContracts.AsNoTracking()
+                .Where(c => c.OwnerId == ownerId)
+                .OrderByDescending(c => c.RequestedAt)
+                .ToListAsync();
+            return await EnrichContractsForOwner(contracts);
+        }
+
+        public async Task<CorporateRentalContractDto> ApproveCorporateRental(Guid ownerId, Guid contractId, ApproveCorporateRentalDto dto)
+        {
+            var contract = await GetOwnedContract(ownerId, contractId);
+            if (contract.Status != CorporateRentalStatus.Requested)
+                throw AppException.Unprocessable("CONTRACT_NOT_PENDING", "Only a pending request can be approved.");
+            if (dto.RateMinor < 0)
+                throw AppException.BadRequest("Rate must be a non-negative amount.", "INVALID_RATE");
+
+            if (dto.Period is not null)
+            {
+                if (!RentalPeriod.IsValid(dto.Period))
+                    throw AppException.BadRequest($"Invalid rental period. Allowed: {string.Join(", ", RentalPeriod.All)}.", "INVALID_RENTAL_PERIOD");
+                contract.Period = dto.Period;
+            }
+
+            var now = DateTime.UtcNow;
+            contract.RateMinor = dto.RateMinor;
+            if (dto.StartDate is DateTime start) contract.StartDate = start;
+            if (dto.EndDate is DateTime end) contract.EndDate = end;
+            if (dto.Note is not null) contract.Notes = dto.Note.Trim();
+            contract.Status = CorporateRentalStatus.Approved;
+            contract.ApprovedAt = now;
+            contract.UpdatedAt = now;
+            await _db.SaveChangesAsync();
+            return (await EnrichContractsForOwner(new List<CorporateRentalContract> { contract })).First();
+        }
+
+        public async Task<CorporateRentalContractDto> RejectCorporateRental(Guid ownerId, Guid contractId, RejectRentalDto dto)
+        {
+            var contract = await GetOwnedContract(ownerId, contractId);
+            if (contract.Status != CorporateRentalStatus.Requested)
+                throw AppException.Unprocessable("CONTRACT_NOT_PENDING", "Only a pending request can be rejected.");
+
+            contract.Status = CorporateRentalStatus.Rejected;
+            contract.RejectionReason = dto.Reason?.Trim();
+            contract.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return (await EnrichContractsForOwner(new List<CorporateRentalContract> { contract })).First();
+        }
+
+        public async Task<CorporateRentalContractDto> ActivateCorporateRental(Guid ownerId, Guid contractId)
+        {
+            var contract = await GetOwnedContract(ownerId, contractId);
+            if (contract.Status != CorporateRentalStatus.Approved)
+                throw AppException.Unprocessable("CONTRACT_NOT_APPROVED", "Only an approved contract can be started.");
+
+            var now = DateTime.UtcNow;
+            contract.Status = CorporateRentalStatus.Active;
+            contract.ActivatedAt = now;
+            if (contract.StartDate is null) contract.StartDate = now;
+            contract.UpdatedAt = now;
+            await _db.SaveChangesAsync();
+            return (await EnrichContractsForOwner(new List<CorporateRentalContract> { contract })).First();
+        }
+
+        public async Task<CorporateRentalContractDto> CompleteCorporateRental(Guid ownerId, Guid contractId)
+        {
+            var contract = await GetOwnedContract(ownerId, contractId);
+            if (contract.Status is not (CorporateRentalStatus.Active or CorporateRentalStatus.Approved))
+                throw AppException.Unprocessable("CONTRACT_NOT_ACTIVE", "Only an approved or active contract can be completed.");
+
+            var now = DateTime.UtcNow;
+            contract.Status = CorporateRentalStatus.Completed;
+            contract.CompletedAt = now;
+            if (contract.EndDate is null) contract.EndDate = now;
+            contract.UpdatedAt = now;
+
+            // Release the drivers who were operating this contract's vehicle.
+            var assignments = await _db.CorporateRentalDrivers
+                .Where(d => d.ContractId == contract.Id && d.Status == CorporateRentalDriverStatus.Assigned)
+                .ToListAsync();
+            foreach (var a in assignments)
+            {
+                a.Status = CorporateRentalDriverStatus.Unassigned;
+                a.UnassignedAt = now;
+                a.UpdatedAt = now;
+            }
+
+            await _db.SaveChangesAsync();
+            return (await EnrichContractsForOwner(new List<CorporateRentalContract> { contract })).First();
+        }
+
+        public async Task<CorporateRentalContractDto> AssignDriver(Guid ownerId, Guid contractId, AssignRentalDriverDto dto)
+        {
+            var contract = await GetOwnedContract(ownerId, contractId);
+            if (contract.Status is not (CorporateRentalStatus.Approved or CorporateRentalStatus.Active))
+                throw AppException.Unprocessable("CONTRACT_NOT_STAFFABLE", "Drivers can only be assigned to an approved or active contract.");
+
+            // The driver must belong to this owner's active fleet roster.
+            bool inRoster = await _db.FleetDrivers.AnyAsync(f =>
+                f.OwnerId == ownerId && f.DriverId == dto.DriverId && f.Status == FleetDriverStatus.Active);
+            if (!inRoster)
+                throw AppException.Unprocessable("DRIVER_NOT_IN_FLEET", "You can only assign drivers from your fleet roster.");
+
+            var now = DateTime.UtcNow;
+            var existing = await _db.CorporateRentalDrivers.FirstOrDefaultAsync(d =>
+                d.ContractId == contract.Id && d.DriverId == dto.DriverId);
+            if (existing is not null)
+            {
+                if (existing.Status == CorporateRentalDriverStatus.Assigned)
+                    throw AppException.Conflict("This driver is already assigned to the contract.", "DRIVER_ALREADY_ASSIGNED");
+                existing.Status = CorporateRentalDriverStatus.Assigned;
+                existing.AssignedAt = now;
+                existing.UnassignedAt = null;
+                existing.UpdatedAt = now;
+            }
+            else
+            {
+                _db.CorporateRentalDrivers.Add(new CorporateRentalDriver
+                {
+                    Id = Guid.NewGuid(),
+                    ContractId = contract.Id,
+                    OwnerId = ownerId,
+                    DriverId = dto.DriverId,
+                    Status = CorporateRentalDriverStatus.Assigned,
+                    AssignedAt = now,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+            }
+            await _db.SaveChangesAsync();
+            return (await EnrichContractsForOwner(new List<CorporateRentalContract> { contract })).First();
+        }
+
+        public async Task<CorporateRentalContractDto> UnassignDriver(Guid ownerId, Guid contractId, Guid driverId)
+        {
+            var contract = await GetOwnedContract(ownerId, contractId);
+            var assignment = await _db.CorporateRentalDrivers.FirstOrDefaultAsync(d =>
+                d.ContractId == contract.Id && d.DriverId == driverId && d.Status == CorporateRentalDriverStatus.Assigned)
+                ?? throw AppException.NotFound("This driver is not assigned to the contract.", "DRIVER_NOT_ASSIGNED");
+
+            var now = DateTime.UtcNow;
+            assignment.Status = CorporateRentalDriverStatus.Unassigned;
+            assignment.UnassignedAt = now;
+            assignment.UpdatedAt = now;
+            await _db.SaveChangesAsync();
+            return (await EnrichContractsForOwner(new List<CorporateRentalContract> { contract })).First();
+        }
+
+        public async Task<ReviewDto> CreateCorporateReview(Guid ownerId, FleetCorporateReviewInputDto dto)
+        {
+            if (dto.Rating < 1 || dto.Rating > 5)
+                throw AppException.BadRequest("Rating must be between 1 and 5.", "INVALID_RATING");
+
+            var profile = await _db.CorporateProfiles.FirstOrDefaultAsync(p => p.UserId == dto.CorporateId)
+                ?? throw AppException.NotFound("The chosen corporate client was not found.", "CORPORATE_NOT_FOUND");
+
+            // A review is earned by a completed rental contract with the corporate.
+            bool hasCompleted = await _db.CorporateRentalContracts.AnyAsync(c =>
+                c.OwnerId == ownerId && c.CorporateId == dto.CorporateId && c.Status == CorporateRentalStatus.Completed);
+            if (!hasCompleted)
+                throw AppException.Unprocessable("NO_COMPLETED_CONTRACT",
+                    "You can review a corporate client only after a rental contract with them has completed.");
+
+            var now = DateTime.UtcNow;
+            // One standing review per (owner, corporate): update in place if it exists.
+            var review = await _db.Reviews.FirstOrDefaultAsync(r =>
+                r.ReviewerId == ownerId && r.RevieweeId == dto.CorporateId && r.RevieweeType == ReviewTargetType.Corporate);
+
+            if (review is null)
+            {
+                review = new Review
+                {
+                    Id = Guid.NewGuid(),
+                    // Not tied to a ride; a synthetic id keeps the unique
+                    // (RideId, ReviewerId, RevieweeType) index collision-free.
+                    RideId = Guid.NewGuid(),
+                    ReviewerId = ownerId,
+                    RevieweeId = dto.CorporateId,
+                    RevieweeType = ReviewTargetType.Corporate,
+                    CreatedAt = now,
+                };
+                _db.Reviews.Add(review);
+            }
+            review.Rating = dto.Rating;
+            review.Comment = dto.Comment?.Trim();
+            review.UpdatedAt = now;
+            await _db.SaveChangesAsync();
+
+            // Refresh the corporate's aggregate rating from all visible reviews about them.
+            var ratings = await _db.Reviews.AsNoTracking()
+                .Where(r => r.RevieweeId == dto.CorporateId && r.RevieweeType == ReviewTargetType.Corporate
+                            && r.Status == ReviewStatus.Visible)
+                .Select(r => r.Rating)
+                .ToListAsync();
+            profile.Rating = ratings.Count > 0 ? Math.Round(ratings.Average(), 2) : null;
+            await _db.SaveChangesAsync();
+
+            return _mapper.Map<ReviewDto>(review);
+        }
+
         // ---- helpers ----------------------------------------------------------
+
+        private async Task<CorporateRentalContract> GetOwnedContract(Guid ownerId, Guid contractId)
+        {
+            var contract = await _db.CorporateRentalContracts.FirstOrDefaultAsync(c => c.Id == contractId)
+                ?? throw AppException.NotFound("Rental contract not found.", "CONTRACT_NOT_FOUND");
+            if (contract.OwnerId != ownerId)
+                throw AppException.Forbidden("This rental contract does not belong to you.");
+            return contract;
+        }
+
+        private async Task<List<CorporateRentalContractDto>> EnrichContractsForOwner(List<CorporateRentalContract> contracts)
+        {
+            if (contracts.Count == 0) return new();
+
+            var vehicleIds = contracts.Select(c => c.VehicleId).Distinct().ToList();
+            var corporateIds = contracts.Select(c => c.CorporateId).Distinct().ToList();
+            var contractIds = contracts.Select(c => c.Id).ToList();
+
+            var vehicles = await _db.Vehicles.AsNoTracking()
+                .Where(v => vehicleIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id);
+            var corpNames = await _db.CorporateProfiles.AsNoTracking()
+                .Where(p => corporateIds.Contains(p.UserId))
+                .ToDictionaryAsync(p => p.UserId, p => p.CompanyName);
+            var driversByContract = await LoadAssignedDrivers(contractIds);
+
+            return contracts.Select(c =>
+            {
+                var dto = _mapper.Map<CorporateRentalContractDto>(c);
+                if (vehicles.TryGetValue(c.VehicleId, out var v)) dto.Vehicle = _mapper.Map<VehicleDto>(v);
+                dto.CorporateCompanyName = corpNames.GetValueOrDefault(c.CorporateId);
+                dto.Drivers = driversByContract.GetValueOrDefault(c.Id) ?? new();
+                dto.CanReview = c.Status == CorporateRentalStatus.Completed;
+                return dto;
+            }).ToList();
+        }
+
+        /// <summary>Load assigned drivers (with name/phone/avatar/rating) grouped by contract.</summary>
+        private async Task<Dictionary<Guid, List<CorporateRentalDriverDto>>> LoadAssignedDrivers(List<Guid> contractIds)
+        {
+            var assignments = await _db.CorporateRentalDrivers.AsNoTracking()
+                .Where(d => contractIds.Contains(d.ContractId) && d.Status == CorporateRentalDriverStatus.Assigned)
+                .OrderBy(d => d.AssignedAt)
+                .ToListAsync();
+
+            var driverIds = assignments.Select(a => a.DriverId).Distinct().ToList();
+            var users = await _db.Users.AsNoTracking()
+                .Where(u => driverIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id);
+            var ratings = await _db.DriverProfiles.AsNoTracking()
+                .Where(p => driverIds.Contains(p.UserId))
+                .ToDictionaryAsync(p => p.UserId, p => p.Rating);
+
+            var result = new Dictionary<Guid, List<CorporateRentalDriverDto>>();
+            foreach (var a in assignments)
+            {
+                var dto = _mapper.Map<CorporateRentalDriverDto>(a);
+                if (users.TryGetValue(a.DriverId, out var u))
+                    dto.Driver = new RentalDriverDto
+                    {
+                        Id = u.Id,
+                        FullName = u.FullName,
+                        Phone = u.Phone,
+                        AvatarUrl = u.AvatarUrl,
+                        Rating = ratings.TryGetValue(a.DriverId, out var r) ? r : null,
+                    };
+                if (!result.TryGetValue(a.ContractId, out var list)) { list = new(); result[a.ContractId] = list; }
+                list.Add(dto);
+            }
+            return result;
+        }
 
         private static void ApplyTerms(RentalAgreement agreement, string rentType, int? amount, int? sharePct)
         {
@@ -374,5 +737,8 @@ namespace BdCabs.Api.Services
                 throw AppException.Forbidden("This rental agreement does not belong to you.");
             return agreement;
         }
+
+        private async Task<Dictionary<Guid, RentalVehicleSummaryDto>> LoadRentalVehicleSummaries(IEnumerable<RentalAgreement> agreements) =>
+            await RentalVehicleSummaryLoader.Load(_db, agreements);
     }
 }

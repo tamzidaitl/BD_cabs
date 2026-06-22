@@ -1,13 +1,18 @@
 import type {
   AccountStatus,
   AvailabilityMode,
+  CorporateBookingStatus,
+  CorporateEmployeeStatus,
+  CorporateRentalStatus,
   CouponStatus,
   CouponType,
   PaymentMethodType,
   PaymentStatus,
   RentalStatus,
   RentType,
+  ReviewStatus,
   ReviewTargetType,
+  RideAllocationMode,
   RideParty,
   RideStatus,
   Role,
@@ -91,6 +96,8 @@ export interface Vehicle {
   /** Billing cadence for the rent — one of RentalPeriod (daily | weekly | monthly). */
   rentalPeriod?: string;
   rentalTerms?: string;
+  /** True when the car is in a renting driver's hands — the owner can't change its status. */
+  isRentedOut?: boolean;
   createdAt: ISODateString;
 }
 
@@ -98,6 +105,27 @@ export interface Vehicle {
 export interface VehicleVerification {
   vehicle: Vehicle;
   owner?: User;
+  documents: VehicleDocument[];
+}
+
+/** The Fleet Owner offering a vehicle for rent, with their aggregate rating. */
+export interface RentalOwner {
+  id: UUID;
+  fullName: string;
+  companyName?: string;
+  avatarUrl?: string;
+  /** Aggregate rating from rider/driver reviews; absent until first rated. */
+  rating?: number;
+}
+
+/**
+ * A rentable vehicle as shown to a driver browsing the marketplace, enriched with
+ * the offering owner and the vehicle's verified documents.
+ */
+export interface RentalVehicleListing {
+  vehicle: Vehicle;
+  owner?: RentalOwner;
+  /** Uploaded documents (registration, insurance, fitness) with verification status. */
   documents: VehicleDocument[];
 }
 
@@ -141,10 +169,19 @@ export interface Ride {
   discountMinor: number;
   couponCode?: string;
   paymentMethod: string;
+  /** Settlement state of the ride charge — one of PaymentStatus. "Paid" once the
+   * rider has paid; persisted server-side so the UI shows a durable paid state
+   * across reloads rather than relying on transient mutation state. */
+  paymentStatus?: PaymentStatus;
+  /** Amount actually charged (minor units); present once paid. */
+  amountPaidMinor?: number;
+  /** When the charge settled; absent until paid. */
+  paidAt?: ISODateString;
   notes?: string;
   scheduledFor?: ISODateString;
-  /** Trip start code — only present for the assigned driver when a fixed test OTP
-   * is configured on the backend; undefined in production. */
+  /** Unique per-trip start code, generated when the ride is requested. Surfaced
+   * only to the rider on their own ride — they read it out to the driver, who
+   * enters it to start the trip. Never sent to the driver. */
   startOtp?: string;
   /** Customer summary (name + avatar) — populated in the driver's nearby-requests feed. */
   customer?: RideCustomer;
@@ -157,6 +194,12 @@ export interface Ride {
   startedAt?: ISODateString;
   completedAt?: ISODateString;
   cancelledAt?: ISODateString;
+  /** Stars (1–5) the customer gave the driver for this ride; present on the
+   * customer's own ride history once rated, absent when not yet rated. */
+  customerRating?: number;
+  /** Stars (1–5) the driver gave the passenger for this trip; present on the
+   * driver's own trip history once rated, absent when not yet rated. */
+  driverRating?: number;
 }
 
 /** A ride party (customer or driver) summarised for the Ops rides console. */
@@ -203,6 +246,10 @@ export interface AdminRide {
   finalFareMinor?: number | null;
   discountMinor: number;
   paymentMethod: string;
+  /** Settlement state of the ride charge — one of PaymentStatus. */
+  paymentStatus?: PaymentStatus;
+  amountPaidMinor?: number | null;
+  paidAt?: ISODateString | null;
   cancelledBy?: string | null;
   cancelReason?: string | null;
   /** Human-readable problems flagged on this ride; empty when all is well. */
@@ -226,6 +273,14 @@ export interface FareEstimateResult {
   distanceMeters: number;
   durationSeconds: number;
   etaSeconds: number;
+}
+
+/** A driving route traced along roads (GET /rides/route) — the line a map draws. */
+export interface RoutePath {
+  distanceMeters: number;
+  durationSeconds: number;
+  /** Ordered [lat, lng] points tracing the route along roads. */
+  coordinates: [number, number][];
 }
 
 /** A driver/vehicle available near a pickup (GET /rides/nearby-vehicles). */
@@ -390,8 +445,15 @@ export interface WalletTransaction {
 
 export interface Review {
   id: UUID;
-  rideId: UUID;
+  /** The ride this review is about; absent for rental-agreement reviews. */
+  rideId?: UUID;
+  /** The rental agreement this review is about; absent for ride reviews. */
+  rentalAgreementId?: UUID;
   reviewerId: UUID;
+  /** Display name of who left the review; present on the "my rating & reviews" surface. */
+  reviewerName?: string;
+  /** Avatar of who left the review; present on the "my rating & reviews" surface. */
+  reviewerAvatarUrl?: string;
   revieweeId: UUID;
   revieweeType: ReviewTargetType;
   rating: number;
@@ -405,6 +467,36 @@ export interface RatingSummary {
   userId: UUID;
   average: number;
   count: number;
+}
+
+/** The signed-in user's rating summary + received review history (GET /reviews/me). */
+export interface ProfileReviews {
+  summary: RatingSummary;
+  reviews: Review[];
+}
+
+/**
+ * A review as seen by a moderator (GET /ops/reviews). Adds the moderation state
+ * and the names of both parties so staff can judge it in context.
+ */
+export interface AdminReview {
+  id: UUID;
+  rideId: UUID;
+  reviewerId: UUID;
+  reviewerName?: string;
+  revieweeId: UUID;
+  revieweeName?: string;
+  revieweeType: ReviewTargetType;
+  rating: number;
+  comment?: string;
+  tags: string[];
+  /** One of ReviewStatus (Visible | Hidden | Removed). */
+  status: ReviewStatus;
+  moderatedBy?: UUID;
+  moderatedAt?: ISODateString;
+  moderationReason?: string;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
 }
 
 export interface SupportTicket {
@@ -492,6 +584,33 @@ export interface RentalAgreement {
   endDate?: ISODateString;
   requestedAt: ISODateString;
   approvedAt?: ISODateString;
+  /** The driver who requested/rents the car (name, phone, avatar, rating). */
+  driver?: RentalDriver;
+  /** The rented car (photo, plate, and the owner's listed price/period). */
+  vehicle?: RentalVehicleSummary;
+}
+
+/** Lightweight vehicle summary attached to a rental agreement: enough to show the
+ * car (photo, make/model/plate) and the Fleet Owner's listed rent. */
+export interface RentalVehicleSummary {
+  id: UUID;
+  type: string;
+  plateNumber: string;
+  make?: string;
+  model?: string;
+  photoUrl?: string;
+  /** The owner's listed rent (minor units), independent of the negotiated terms. */
+  rentalPriceMinor?: number;
+  rentalPeriod?: string;
+}
+
+/** Lightweight driver summary attached to a rental request for the owner's view. */
+export interface RentalDriver {
+  id: UUID;
+  fullName: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  rating?: number;
 }
 
 export interface RentDue {
@@ -577,4 +696,213 @@ export interface Settlement {
   rentCollectedMinor: number;
   ownerCutMinor: number;
   totalMinor: number;
+}
+
+// ---- Corporate Client -----------------------------------------------------
+
+/** Company business profile + KYC/billing details (GET /corporate/me). */
+export interface CorporateProfile {
+  id: UUID;
+  userId: UUID;
+  companyName?: string;
+  tradeLicenseNumber?: string;
+  billingEmail?: string;
+  billingAddress?: string;
+  verificationStatus: VerificationStatus;
+  rating?: number;
+}
+
+/** An employee who may have rides booked under the company (GET /corporate/employees). */
+export interface CorporateEmployee {
+  id: UUID;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  /** Linked end-user account, when the employee email matches one. */
+  userId?: UUID;
+  status: CorporateEmployeeStatus;
+  /** Monthly spend cap in minor units; null = no cap. */
+  monthlySpendLimitMinor?: number;
+  /** When true, every booking for this employee needs admin approval. */
+  requiresApproval: boolean;
+  /** This calendar month's completed spend (minor units). */
+  spentThisMonthMinor: number;
+}
+
+/** A ride booked for an employee (GET /corporate/bookings). Money is minor units. */
+export interface CorporateBooking {
+  id: UUID;
+  employeeId: UUID;
+  employeeName?: string;
+  vehicleTypeId: string;
+  status: CorporateBookingStatus;
+  pickupLat: number;
+  pickupLng: number;
+  pickupAddress?: string;
+  destLat: number;
+  destLng: number;
+  destAddress?: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  currency: string;
+  fareEstimateMinor: number;
+  finalFareMinor?: number;
+  allocationMode: RideAllocationMode;
+  preferredFleetId?: UUID;
+  approvalRequired: boolean;
+  rejectionReason?: string;
+  notes?: string;
+  scheduledFor?: ISODateString;
+  requestedAt: ISODateString;
+  completedAt?: ISODateString;
+}
+
+/** Result of POST /corporate/bookings/estimate — fare + whether approval is needed. */
+export interface CorporateBookingEstimate {
+  currency: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  fareEstimateMinor: number;
+  approvalRequired: boolean;
+  monthlyLimitMinor?: number;
+  spentThisMonthMinor: number;
+  /** True when this trip would push the employee over their monthly cap. */
+  exceedsLimit: boolean;
+}
+
+/** A recurring corporate ride schedule for an employee (GET /corporate/recurring). */
+export interface CorporateRecurringRide {
+  id: UUID;
+  employeeId: UUID;
+  employeeName?: string;
+  vehicleTypeId: string;
+  pickupLat: number;
+  pickupLng: number;
+  pickupAddress?: string;
+  destLat: number;
+  destLng: number;
+  destAddress?: string;
+  allocationMode: RideAllocationMode;
+  preferredFleetId?: UUID;
+  /** Days of week the ride repeats: 0 = Sunday … 6 = Saturday. */
+  daysOfWeek: number[];
+  /** Local pickup time, "HH:mm". */
+  timeOfDay: string;
+  startDate: ISODateString;
+  endDate?: ISODateString;
+  active: boolean;
+}
+
+/** A monthly billing statement line (part of GET /corporate/billing). */
+export interface CorporateStatement {
+  period: string;
+  currency: string;
+  trips: number;
+  amountMinor: number;
+}
+
+/** Company billing summary — current outstanding + monthly statements. */
+export interface CorporateBilling {
+  currency: string;
+  billingEmail?: string;
+  billingAddress?: string;
+  currentMonthMinor: number;
+  currentMonthTrips: number;
+  statements: CorporateStatement[];
+}
+
+/** Per-employee row in the consolidated report. */
+export interface CorporateEmployeeSpend {
+  employeeId: UUID;
+  employeeName: string;
+  trips: number;
+  spendMinor: number;
+}
+
+/** Per-vehicle-type row in the consolidated report. */
+export interface CorporateVehicleTypeSpend {
+  vehicleType: string;
+  trips: number;
+  spendMinor: number;
+}
+
+/** Consolidated trip + spend report over a date range (GET /corporate/reports). */
+export interface CorporateReport {
+  currency: string;
+  from: ISODateString;
+  to: ISODateString;
+  totalTrips: number;
+  totalSpendMinor: number;
+  byEmployee: CorporateEmployeeSpend[];
+  byVehicleType: CorporateVehicleTypeSpend[];
+}
+
+/** A Fleet/Vehicle Owner the corporate can route to / review (GET /corporate/fleets). */
+export interface CorporateFleetSummary {
+  ownerId: UUID;
+  companyName?: string;
+  rating?: number;
+  vehicleCount: number;
+  /** True when a rental contract with this owner has completed — gates the review. */
+  canReview: boolean;
+}
+
+// ---- Corporate ↔ Vehicle Owner rental contracts ---------------------------
+
+/**
+ * A rental contract under which a Vehicle Owner rents a vehicle to a Corporate
+ * Client for a service period. Enrichment fields are filled per audience: the
+ * corporate sees `ownerCompanyName`; the owner sees `corporateCompanyName`; both
+ * see the vehicle and the assigned drivers.
+ */
+export interface CorporateRentalContract {
+  id: UUID;
+  corporateId: UUID;
+  ownerId: UUID;
+  vehicleId: UUID;
+  status: CorporateRentalStatus;
+  /** Billing cadence — one of RentalPeriod (daily | weekly | monthly). */
+  period: string;
+  currency: string;
+  /** Rate per period (minor units); set when the owner approves. */
+  rateMinor?: number;
+  startDate?: ISODateString;
+  endDate?: ISODateString;
+  servicePurpose?: string;
+  notes?: string;
+  rejectionReason?: string;
+  requestedAt: ISODateString;
+  approvedAt?: ISODateString;
+  activatedAt?: ISODateString;
+  completedAt?: ISODateString;
+  cancelledAt?: ISODateString;
+  // Enrichment
+  vehicle?: Vehicle;
+  /** The owner's fleet company name (shown to the corporate). */
+  ownerCompanyName?: string;
+  /** The renting company's name (shown to the owner). */
+  corporateCompanyName?: string;
+  /** Drivers currently assigned to operate the vehicle. */
+  drivers: CorporateRentalDriver[];
+  /** True once completed — the two parties may review each other. */
+  canReview: boolean;
+}
+
+/** A driver assigned by the owner to operate a vehicle on a corporate rental contract. */
+export interface CorporateRentalDriver {
+  id: UUID;
+  contractId: UUID;
+  driverId: UUID;
+  status: string; // one of CorporateRentalDriverStatus (assigned | unassigned)
+  assignedAt: ISODateString;
+  /** The assigned driver's profile (name, phone, avatar, rating). */
+  driver?: RentalDriver;
+}
+
+/** A rentable owner vehicle a corporate can request (GET /corporate/rental-vehicles). */
+export interface CorporateRentalVehicle {
+  vehicle: Vehicle;
+  ownerId: UUID;
+  ownerCompanyName?: string;
+  ownerRating?: number;
 }

@@ -25,37 +25,48 @@ namespace BdCabs.Api.Services
         private readonly AppDbContext _db;
         private readonly ICouponService _coupons;
         private readonly IWalletService _wallet;
-        /// <summary>
-        /// Fixed start code for testing (e.g. "123456"), from config "Testing:DefaultRideOtp".
-        /// Leave the key empty/unset in production so a random 6-digit OTP is generated per ride.
-        /// </summary>
-        private readonly string? _defaultRideOtp;
+        private readonly IRoutingService _routing;
 
-        public RideService(AppDbContext db, ICouponService coupons, IWalletService wallet, IConfiguration config)
+        public RideService(AppDbContext db, ICouponService coupons, IWalletService wallet, IRoutingService routing)
         {
             _db = db;
             _coupons = coupons;
             _wallet = wallet;
-            _defaultRideOtp = config["Testing:DefaultRideOtp"];
+            _routing = routing;
+        }
+
+        /// <summary>
+        /// Road distance (metres) + duration (seconds) between two points, following
+        /// the street network like a real ride-hailing quote. Falls back to the
+        /// straight-line haversine + nominal speed if the router is unavailable.
+        /// </summary>
+        private async Task<(int distance, int duration)> RoadDistanceDuration(
+            double fromLat, double fromLng, double toLat, double toLng)
+        {
+            var routed = await _routing.Route(fromLat, fromLng, toLat, toLng);
+            if (routed is { } r) return (r.distanceMeters, r.durationSeconds);
+
+            int straight = FareCalculator.DistanceMeters(fromLat, fromLng, toLat, toLng);
+            return (straight, FareCalculator.DurationSeconds(straight));
         }
 
         // ---- Customer --------------------------------------------------------
 
-        public Task<FareEstimateResultDto> Estimate(RideEstimateDto dto)
+        public async Task<FareEstimateResultDto> Estimate(RideEstimateDto dto)
         {
             var type = NormalizeType(dto.VehicleTypeId);
-            int distance = FareCalculator.DistanceMeters(dto.Pickup.Lat, dto.Pickup.Lng, dto.Destination.Lat, dto.Destination.Lng);
-            int duration = FareCalculator.DurationSeconds(distance);
+            var (distance, duration) = await RoadDistanceDuration(
+                dto.Pickup.Lat, dto.Pickup.Lng, dto.Destination.Lat, dto.Destination.Lng);
             int fare = FareCalculator.EstimateFareMinor(type, distance, duration);
 
-            return Task.FromResult(new FareEstimateResultDto
+            return new FareEstimateResultDto
             {
                 Currency = "BDT",
                 FareEstimateMinor = fare,
                 DistanceMeters = distance,
                 DurationSeconds = duration,
                 EtaSeconds = 300, // nominal pickup ETA; refined by live dispatch
-            });
+            };
         }
 
         public async Task<List<NearbyVehicleDto>> NearbyVehicles(double lat, double lng, string? vehicleType)
@@ -103,8 +114,8 @@ namespace BdCabs.Api.Services
             if (!PaymentMethodType.IsValid(dto.PaymentMethod))
                 throw AppException.BadRequest($"Invalid payment method. Allowed: {string.Join(", ", PaymentMethodType.All)}.", "INVALID_PAYMENT_METHOD");
 
-            int distance = FareCalculator.DistanceMeters(dto.Pickup.Lat, dto.Pickup.Lng, dto.Destination.Lat, dto.Destination.Lng);
-            int duration = FareCalculator.DurationSeconds(distance);
+            var (distance, duration) = await RoadDistanceDuration(
+                dto.Pickup.Lat, dto.Pickup.Lng, dto.Destination.Lat, dto.Destination.Lng);
             int fare = FareCalculator.EstimateFareMinor(type, distance, duration);
 
             int discount = 0;
@@ -139,9 +150,7 @@ namespace BdCabs.Api.Services
                 DiscountMinor = discount,
                 CouponCode = couponCode,
                 PaymentMethod = dto.PaymentMethod,
-                StartOtp = string.IsNullOrWhiteSpace(_defaultRideOtp)
-                    ? Random.Shared.Next(100000, 999999).ToString()
-                    : _defaultRideOtp,
+                StartOtp = Random.Shared.Next(100000, 999999).ToString(),
                 Notes = dto.Notes,
                 ScheduledFor = scheduled ? dto.ScheduledFor : null,
                 RequestedAt = now,
@@ -184,7 +193,14 @@ namespace BdCabs.Api.Services
         {
             var ride = await Load(rideId);
             AuthorizeParticipant(ride, userId, role);
-            return RideMapper.ToDto(ride);
+            var dto = RideMapper.ToDto(ride);
+            // The start code is the customer's to read out to the driver, so surface it
+            // to the rider on their own ride detail. (Drivers only see it in test mode;
+            // see DriverTrips.)
+            if (userId == ride.CustomerId)
+                dto.StartOtp = ride.StartOtp;
+            await ApplyPaymentStatus(new[] { dto });
+            return dto;
         }
 
         public async Task<PagedResult<RideDto>> MyRides(Guid customerId, int page, int pageSize)
@@ -193,7 +209,10 @@ namespace BdCabs.Api.Services
             var query = _db.Rides.AsNoTracking().Where(r => r.CustomerId == customerId).OrderByDescending(r => r.RequestedAt);
             int total = await query.CountAsync();
             var rides = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-            return PagedResult<RideDto>.Create(rides.Select(RideMapper.ToDto).ToList(), total, page, pageSize);
+            var dtos = rides.Select(RideMapper.ToDto).ToList();
+            await ApplyPaymentStatus(dtos);
+            await ApplyCustomerRating(customerId, dtos);
+            return PagedResult<RideDto>.Create(dtos, total, page, pageSize);
         }
 
         public async Task<RideTrackDto> Track(Guid userId, string role, Guid rideId)
@@ -475,18 +494,85 @@ namespace BdCabs.Api.Services
             var query = _db.Rides.AsNoTracking().Where(r => r.DriverId == driverUserId).OrderByDescending(r => r.RequestedAt);
             int total = await query.CountAsync();
             var rides = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-            var dtos = rides.Select(r =>
-            {
-                var dto = RideMapper.ToDto(r);
-                // Surface the start code to the assigned driver only in test mode (see _defaultRideOtp).
-                if (!string.IsNullOrWhiteSpace(_defaultRideOtp))
-                    dto.StartOtp = r.StartOtp;
-                return dto;
-            }).ToList();
+
+            // Attach each trip's customer (name + avatar) so the driver sees who they drove.
+            var customerIds = rides.Select(r => r.CustomerId).Distinct().ToList();
+            var customers = await _db.Users.AsNoTracking()
+                .Where(u => customerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id);
+
+            // Never surface the start code to the driver — the rider reads it out to
+            // start the trip, which is what makes it a real handshake.
+            var dtos = rides.Select(r => RideMapper.ToDto(r, customers.GetValueOrDefault(r.CustomerId))).ToList();
+            await ApplyPaymentStatus(dtos);
+            await ApplyDriverRating(driverUserId, dtos);
             return PagedResult<RideDto>.Create(dtos, total, page, pageSize);
         }
 
         // ---- helpers ---------------------------------------------------------
+
+        /// <summary>Stamp each ride DTO with its settled-payment state (Paid + amount
+        /// + time) by batch-loading the successful charges for these rides. Rides with
+        /// no paid charge keep the default Pending status. This is what lets the client
+        /// render a durable paid state instead of relying on transient mutation state.</summary>
+        private async Task ApplyPaymentStatus(IReadOnlyCollection<RideDto> dtos)
+        {
+            if (dtos.Count == 0) return;
+            var ids = dtos.Select(d => d.Id).ToList();
+            var paid = await _db.Payments.AsNoTracking()
+                .Where(p => ids.Contains(p.RideId) && p.Status == PaymentStatus.Paid)
+                .ToListAsync();
+            if (paid.Count == 0) return;
+
+            var byRide = paid
+                .GroupBy(p => p.RideId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.CreatedAt).First());
+
+            foreach (var d in dtos)
+            {
+                if (byRide.TryGetValue(d.Id, out var p))
+                {
+                    d.PaymentStatus = PaymentStatus.Paid;
+                    d.AmountPaidMinor = p.AmountMinor;
+                    d.PaidAt = p.CreatedAt;
+                }
+            }
+        }
+
+        /// <summary>Attaches the stars the customer gave the driver on each listed ride,
+        /// so the customer's ride history can flag which completed rides are rated.</summary>
+        private Task ApplyCustomerRating(Guid customerId, IReadOnlyCollection<RideDto> dtos) =>
+            ApplyOwnRating(customerId, ReviewTargetType.Driver, dtos, (d, stars) => d.CustomerRating = stars);
+
+        /// <summary>Attaches the stars the driver gave the passenger on each listed trip,
+        /// so the driver's trip history can mark which completed trips are rated.</summary>
+        private Task ApplyDriverRating(Guid driverId, IReadOnlyCollection<RideDto> dtos) =>
+            ApplyOwnRating(driverId, ReviewTargetType.Customer, dtos, (d, stars) => d.DriverRating = stars);
+
+        /// <summary>Batch-loads the reviewer's own visible reviews of the given target type
+        /// for the listed rides and stamps each DTO via <paramref name="set"/>. Used to mark
+        /// a viewer's ride/trip history with the rating they themselves gave.</summary>
+        private async Task ApplyOwnRating(
+            Guid reviewerId, string revieweeType, IReadOnlyCollection<RideDto> dtos, Action<RideDto, int> set)
+        {
+            if (dtos.Count == 0) return;
+            var ids = dtos.Select(d => d.Id).ToList();
+            var ratings = await _db.Reviews.AsNoTracking()
+                .Where(r => r.RideId != null && ids.Contains(r.RideId.Value)
+                    && r.ReviewerId == reviewerId
+                    && r.RevieweeType == revieweeType
+                    && r.Status == ReviewStatus.Visible)
+                .ToListAsync();
+            if (ratings.Count == 0) return;
+
+            var byRide = ratings
+                .GroupBy(r => r.RideId!.Value)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.CreatedAt).First().Rating);
+
+            foreach (var d in dtos)
+                if (byRide.TryGetValue(d.Id, out var stars))
+                    set(d, stars);
+        }
 
         private async Task<Ride> Load(Guid rideId) =>
             await _db.Rides.FirstOrDefaultAsync(r => r.Id == rideId)

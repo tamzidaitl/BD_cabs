@@ -103,8 +103,33 @@ export const ReviewTargetType = {
   Driver: 'Driver',
   Customer: 'Customer',
   Owner: 'Owner',
+  /** A rented Vehicle, rated by a rental Driver after the agreement ends. */
+  Vehicle: 'Vehicle',
+  /** A Corporate Client, rated by a Vehicle Owner after a rental contract. */
+  Corporate: 'Corporate',
 } as const;
 export type ReviewTargetType = (typeof ReviewTargetType)[keyof typeof ReviewTargetType];
+
+/**
+ * Moderation state of a review (Super Admin / Support Admin moderation). Hidden
+ * and Removed reviews are kept out of public listings and rating averages;
+ * Hidden is reversible, Removed is a soft-delete kept for audit.
+ */
+export const ReviewStatus = {
+  Visible: 'Visible',
+  Hidden: 'Hidden',
+  Removed: 'Removed',
+} as const;
+export type ReviewStatus = (typeof ReviewStatus)[keyof typeof ReviewStatus];
+
+/** The action a moderator takes on a review. */
+export const ReviewModerationAction = {
+  Hide: 'hide',
+  Unhide: 'unhide',
+  Remove: 'remove',
+} as const;
+export type ReviewModerationAction =
+  (typeof ReviewModerationAction)[keyof typeof ReviewModerationAction];
 
 export const RentalStatus = {
   Requested: 'Requested',
@@ -180,3 +205,57 @@ export const CouponStatus = {
   Expired: 'expired',
 } as const;
 export type CouponStatus = (typeof CouponStatus)[keyof typeof CouponStatus];
+
+// ---- Corporate Client flows -----------------------------------------------
+
+/** Membership state of an employee under a corporate account. */
+export const CorporateEmployeeStatus = {
+  Active: 'active',
+  Suspended: 'suspended',
+} as const;
+export type CorporateEmployeeStatus =
+  (typeof CorporateEmployeeStatus)[keyof typeof CorporateEmployeeStatus];
+
+/**
+ * How a corporate booking is allocated a vehicle: the platform auto-allocates
+ * any available vehicle, or the ride is routed to a chosen Fleet/Vehicle Owner.
+ */
+export const RideAllocationMode = {
+  Auto: 'auto',
+  Fleet: 'fleet',
+} as const;
+export type RideAllocationMode = (typeof RideAllocationMode)[keyof typeof RideAllocationMode];
+
+/**
+ * Lifecycle of a corporate booking. Bookings that hit an employee's approval
+ * rule or spend limit start `PendingApproval`; once cleared they are `Approved`
+ * (or `Scheduled` for advance bookings), then `Completed` — which is what
+ * billing and reports count.
+ */
+export const CorporateBookingStatus = {
+  PendingApproval: 'PendingApproval',
+  Approved: 'Approved',
+  Scheduled: 'Scheduled',
+  Completed: 'Completed',
+  Rejected: 'Rejected',
+  Cancelled: 'Cancelled',
+} as const;
+export type CorporateBookingStatus =
+  (typeof CorporateBookingStatus)[keyof typeof CorporateBookingStatus];
+
+/**
+ * Lifecycle of a Corporate ↔ Vehicle Owner rental contract. The corporate
+ * requests a rentable vehicle (`Requested`); the owner sets terms and approves
+ * (`Approved`), assigns drivers and starts the service period (`Active`), then
+ * completes it (`Completed`) — which unlocks the two-way review.
+ */
+export const CorporateRentalStatus = {
+  Requested: 'Requested',
+  Approved: 'Approved',
+  Active: 'Active',
+  Completed: 'Completed',
+  Rejected: 'Rejected',
+  Cancelled: 'Cancelled',
+} as const;
+export type CorporateRentalStatus =
+  (typeof CorporateRentalStatus)[keyof typeof CorporateRentalStatus];

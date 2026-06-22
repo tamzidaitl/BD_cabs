@@ -24,6 +24,7 @@ const Signup = lazy(() => import('@/pages/public/Signup'));
 const Login = lazy(() => import('@/pages/Login'));
 const Unauthorized = lazy(() => import('@/pages/Unauthorized'));
 const AccountSettings = lazy(() => import('@/pages/AccountSettings'));
+const Rating = lazy(() => import('@/pages/Rating'));
 
 // Admin (each page self-guards with its required permission)
 const Overview = lazy(() => import('@/pages/dashboard/Overview'));
@@ -34,6 +35,7 @@ const Payouts = lazy(() => import('@/pages/dashboard/Payouts'));
 const Coupons = lazy(() => import('@/pages/dashboard/Coupons'));
 const DriverVerification = lazy(() => import('@/pages/dashboard/DriverVerification'));
 const VehicleVerification = lazy(() => import('@/pages/dashboard/VehicleVerification'));
+const ReviewModeration = lazy(() => import('@/pages/dashboard/ReviewModeration'));
 
 // Customer portal
 const Book = lazy(() => import('@/pages/customer/Book'));
@@ -56,11 +58,20 @@ const FleetVehicles = lazy(() => import('@/pages/fleet/Vehicles'));
 const FleetDrivers = lazy(() => import('@/pages/fleet/Drivers'));
 const FleetPerformance = lazy(() => import('@/pages/fleet/Performance'));
 const FleetReviews = lazy(() => import('@/pages/fleet/Reviews'));
+const FleetCorporateRentals = lazy(() => import('@/pages/fleet/CorporateRentals'));
+
+// Corporate Client portal
+const CorporateOverview = lazy(() => import('@/pages/corporate/Overview'));
+const CorporateEmployees = lazy(() => import('@/pages/corporate/Employees'));
+const CorporateBookings = lazy(() => import('@/pages/corporate/Bookings'));
+const CorporateBilling = lazy(() => import('@/pages/corporate/Billing'));
+const CorporateReviews = lazy(() => import('@/pages/corporate/Reviews'));
+const CorporateVehicleRentals = lazy(() => import('@/pages/corporate/VehicleRentals'));
 
 /**
- * The `/app` index page. All three portal roles share the path, so the landing
+ * The `/app` index page. All four portal roles share the path, so the landing
  * page is chosen from the signed-in role: customers book, drivers drive, fleet
- * owners see their overview.
+ * owners and corporate clients see their overview.
  */
 function PortalHome() {
   const role = useAuthStore((s) => s.session?.role);
@@ -69,6 +80,8 @@ function PortalHome() {
       return <Drive />;
     case Role.FleetOwner:
       return <FleetOverview />;
+    case Role.Corporate:
+      return <CorporateOverview />;
     case Role.Customer:
       return <Book />;
     default:
@@ -116,6 +129,7 @@ export function App() {
           <Route path="/rides" element={<OpsRides />} />
           <Route path="/verification/drivers" element={<DriverVerification />} />
           <Route path="/verification/vehicles" element={<VehicleVerification />} />
+          <Route path="/reviews" element={<ReviewModeration />} />
           <Route path="/users" element={<Users />} />
           <Route path="/finance/payouts" element={<Payouts />} />
           <Route path="/config/coupons" element={<Coupons />} />
@@ -126,12 +140,15 @@ export function App() {
             role's inner pages are guarded so the others can't reach them. */}
         <Route
           element={
-            <RoleRoute roles={[Role.Customer, Role.Driver, Role.FleetOwner]}>
+            <RoleRoute roles={[Role.Customer, Role.Driver, Role.FleetOwner, Role.Corporate]}>
               <PortalShell />
             </RoleRoute>
           }
         >
           <Route path="/app" element={<PortalHome />} />
+
+          {/* Shared across every portal role — your own received rating & reviews */}
+          <Route path="/app/rating" element={<Rating />} />
 
           {/* Customer-only pages */}
           <Route
@@ -172,8 +189,24 @@ export function App() {
           >
             <Route path="/app/vehicles" element={<FleetVehicles />} />
             <Route path="/app/drivers" element={<FleetDrivers />} />
+            <Route path="/app/corporate-rentals" element={<FleetCorporateRentals />} />
             <Route path="/app/performance" element={<FleetPerformance />} />
             <Route path="/app/reviews" element={<FleetReviews />} />
+          </Route>
+
+          {/* Corporate-client-only pages */}
+          <Route
+            element={
+              <RoleRoute roles={[Role.Corporate]}>
+                <Outlet />
+              </RoleRoute>
+            }
+          >
+            <Route path="/app/employees" element={<CorporateEmployees />} />
+            <Route path="/app/bookings" element={<CorporateBookings />} />
+            <Route path="/app/vehicle-rentals" element={<CorporateVehicleRentals />} />
+            <Route path="/app/billing" element={<CorporateBilling />} />
+            <Route path="/app/fleet-reviews" element={<CorporateReviews />} />
           </Route>
         </Route>
 

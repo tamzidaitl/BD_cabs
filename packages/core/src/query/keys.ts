@@ -16,6 +16,7 @@ export const queryKeys = {
     rides: (params: Record<string, unknown>) => ['ops', 'rides', params] as const,
     pendingDrivers: () => ['ops', 'drivers', 'pending'] as const,
     pendingVehicles: () => ['ops', 'vehicles', 'pending'] as const,
+    reviews: (params: Record<string, unknown>) => ['ops', 'reviews', params] as const,
   },
   coupons: {
     admin: () => ['coupons', 'admin'] as const,
@@ -44,8 +45,10 @@ export const queryKeys = {
     transactions: () => ['wallet', 'transactions'] as const,
   },
   reviews: {
+    me: () => ['reviews', 'me'] as const,
     forRide: (rideId: string) => ['reviews', 'ride', rideId] as const,
     forUser: (userId: string) => ['reviews', 'user', userId] as const,
+    forRental: (agreementId: string) => ['reviews', 'rental', agreementId] as const,
   },
   support: {
     mine: () => ['support', 'tickets', 'me'] as const,
@@ -77,6 +80,22 @@ export const queryKeys = {
     revenue: (params: Record<string, unknown>) => ['fleet', 'revenue', params] as const,
     settlements: () => ['fleet', 'settlements'] as const,
     reviews: () => ['fleet', 'reviews'] as const,
+    corporateRentals: () => ['fleet', 'corporate-rentals'] as const,
+  },
+  corporate: {
+    me: () => ['corporate', 'me'] as const,
+    employees: () => ['corporate', 'employees'] as const,
+    /** Prefix for every bookings query, for invalidating all status filters at once. */
+    bookingsAll: () => ['corporate', 'bookings'] as const,
+    bookings: (params: Record<string, unknown>) => ['corporate', 'bookings', params] as const,
+    recurring: () => ['corporate', 'recurring'] as const,
+    billing: () => ['corporate', 'billing'] as const,
+    reports: (params: Record<string, unknown>) => ['corporate', 'reports', params] as const,
+    fleets: () => ['corporate', 'fleets'] as const,
+    reviews: () => ['corporate', 'reviews'] as const,
+    reviewsReceived: () => ['corporate', 'reviews-received'] as const,
+    rentalVehicles: () => ['corporate', 'rental-vehicles'] as const,
+    rentalContracts: () => ['corporate', 'rental-contracts'] as const,
   },
   system: {
     health: () => ['system', 'health'] as const,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Badge, Card, Form, Spinner, Table } from 'react-bootstrap';
 import { AlertTriangle, ArrowRight, Car as CarIcon, ShieldAlert } from 'lucide-react';
-import { Permission, RideStatus, useOpsRides } from '@bd-cabs/core';
+import { PaymentStatus, Permission, RideStatus, useOpsRides } from '@bd-cabs/core';
 import { ProtectedRoute } from '@/components/rbac/ProtectedRoute';
 import { formatBDT, formatDateTime, formatDistance } from '@/lib/appNav';
 import { rideStatusVariant } from '../customer/rideStatus';
@@ -67,6 +67,7 @@ function RidesInner() {
                     <th style={stickyTh}>Route</th>
                     <th style={stickyTh}>Car</th>
                     <th style={stickyTh}>Status</th>
+                    <th style={stickyTh}>Payment</th>
                     <th style={stickyTh}>Problems</th>
                   </tr>
                 </thead>
@@ -145,6 +146,20 @@ function RidesInner() {
                           </div>
                         </td>
 
+                        {/* Has the charge settled? */}
+                        <td style={{ minWidth: 110 }}>
+                          {r.paymentStatus === PaymentStatus.Paid ? (
+                            <>
+                              <Badge bg="success-subtle" text="success">Paid</Badge>
+                              {r.paidAt && (
+                                <div className="text-muted small mt-1">{formatDateTime(r.paidAt)}</div>
+                              )}
+                            </>
+                          ) : (
+                            <Badge bg="secondary-subtle" text="secondary">Unpaid</Badge>
+                          )}
+                        </td>
+
                         {/* Any problems on this ride? */}
                         <td style={{ minWidth: 180 }}>
                           {r.problems.length === 0 ? (
@@ -173,7 +188,7 @@ function RidesInner() {
                   })}
                   {data.items.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="text-center text-muted py-4">
+                      <td colSpan={6} className="text-center text-muted py-4">
                         No rides found.
                       </td>
                     </tr>

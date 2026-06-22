@@ -10,6 +10,7 @@ import { queryKeys } from './keys';
 import { useAuthStore } from '../auth/authStore';
 import type {
   RecurringRideInput,
+  RentalReviewInput,
   ReviewInput,
   RideRequestInput,
   SavedPlaceInput,
@@ -322,8 +323,44 @@ export function useCreateReview(): UseMutationResult<Review, unknown, ReviewInpu
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body) => endpoints.reviews.create(body),
-    onSuccess: (review) =>
-      qc.invalidateQueries({ queryKey: queryKeys.reviews.forRide(review.rideId) }),
+    onSuccess: (review) => {
+      if (review.rideId) qc.invalidateQueries({ queryKey: queryKeys.reviews.forRide(review.rideId) });
+    },
+  });
+}
+
+/** Reviews left on a ride (visible to its participants) — used to tell which
+ * directions a user has already rated. */
+export function useRideReviews(rideId: string, enabled = true): UseQueryResult<Review[]> {
+  const { endpoints } = useServices();
+  return useQuery({
+    queryKey: queryKeys.reviews.forRide(rideId),
+    queryFn: () => endpoints.reviews.forRide(rideId),
+    enabled: enabled && !!rideId,
+  });
+}
+
+/** A rental driver rates the rented car / its owner once the agreement has ended. */
+export function useCreateRentalReview(
+  agreementId: string,
+): UseMutationResult<Review, unknown, RentalReviewInput> {
+  const { endpoints } = useServices();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => endpoints.reviews.createForRental(agreementId, body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.reviews.forRental(agreementId) }),
+  });
+}
+
+/** Reviews left on a rental agreement (visible to its driver/owner) — used to tell
+ * which of the vehicle/owner ratings the driver has already submitted. */
+export function useRentalReviews(agreementId: string, enabled = true): UseQueryResult<Review[]> {
+  const { endpoints } = useServices();
+  return useQuery({
+    queryKey: queryKeys.reviews.forRental(agreementId),
+    queryFn: () => endpoints.reviews.forRental(agreementId),
+    enabled: enabled && !!agreementId,
   });
 }
 

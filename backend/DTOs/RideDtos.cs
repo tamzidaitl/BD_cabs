@@ -82,12 +82,22 @@ namespace BdCabs.Api.DTOs
         public string? CouponCode { get; set; }
         public string PaymentMethod { get; set; } = string.Empty;
 
+        /// <summary>Settlement state of the ride charge — one of PaymentStatus
+        /// (Pending until the rider pays, then Paid). Persisted server-side so the
+        /// UI can show a durable "Paid" state instead of relying on transient
+        /// client mutation state.</summary>
+        public string PaymentStatus { get; set; } = Models.PaymentStatus.Pending;
+        /// <summary>Amount actually charged (minor units); set once paid.</summary>
+        public int? AmountPaidMinor { get; set; }
+        /// <summary>When the ride charge settled; null until paid.</summary>
+        public DateTime? PaidAt { get; set; }
+
         public string? Notes { get; set; }
         public DateTime? ScheduledFor { get; set; }
 
-        /// <summary>The trip start code. Only populated for the assigned driver when a
-        /// fixed test OTP is configured (Testing:DefaultRideOtp); null in production so
-        /// the code stays the rider's secret.</summary>
+        /// <summary>The trip start code. Surfaced only to the rider (on their own ride
+        /// detail) so they can read it out to the driver; null for everyone else,
+        /// including the driver, so the code stays the rider's secret.</summary>
         public string? StartOtp { get; set; }
 
         /// <summary>Customer summary (name + avatar) so the driver can see who is
@@ -104,6 +114,16 @@ namespace BdCabs.Api.DTOs
         public DateTime? StartedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
         public DateTime? CancelledAt { get; set; }
+
+        /// <summary>Stars (1–5) the customer gave the driver for this ride, if rated.
+        /// Populated on the customer's own ride history so the list can show which
+        /// completed rides have been rated; null when not yet rated.</summary>
+        public int? CustomerRating { get; set; }
+
+        /// <summary>Stars (1–5) the driver gave the passenger for this trip, if rated.
+        /// Populated on the driver's own trip history so the list can mark which
+        /// completed trips the driver has already rated; null when not yet rated.</summary>
+        public int? DriverRating { get; set; }
     }
 
     /// <summary>Result of POST /rides/request — the created ride plus the start OTP
@@ -122,6 +142,19 @@ namespace BdCabs.Api.DTOs
         public int DistanceMeters { get; set; }
         public int DurationSeconds { get; set; }
         public int EtaSeconds { get; set; }
+    }
+
+    /// <summary>
+    /// A driving route traced along the road network (the line a map draws for a
+    /// trip). Returned by the route proxy so the client never calls the routing
+    /// provider directly.
+    /// </summary>
+    public class RoutePathDto
+    {
+        public int DistanceMeters { get; set; }
+        public int DurationSeconds { get; set; }
+        /// <summary>Ordered [lat, lng] points tracing the route along roads.</summary>
+        public List<double[]> Coordinates { get; set; } = new();
     }
 
     public class RideTrackDto
@@ -228,6 +261,13 @@ namespace BdCabs.Api.DTOs
         public int? FinalFareMinor { get; set; }
         public int DiscountMinor { get; set; }
         public string PaymentMethod { get; set; } = string.Empty;
+
+        /// <summary>Settlement state of the ride charge — one of PaymentStatus.</summary>
+        public string PaymentStatus { get; set; } = Models.PaymentStatus.Pending;
+        /// <summary>Amount actually charged (minor units); set once paid.</summary>
+        public int? AmountPaidMinor { get; set; }
+        /// <summary>When the ride charge settled; null until paid.</summary>
+        public DateTime? PaidAt { get; set; }
 
         public string? CancelledBy { get; set; }
         public string? CancelReason { get; set; }

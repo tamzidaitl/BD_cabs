@@ -33,7 +33,8 @@ namespace BdCabs.Api.Profiles
             CreateMap<Payment, PaymentDto>();
             CreateMap<Wallet, WalletDto>();
             CreateMap<WalletTransaction, WalletTransactionDto>();
-            CreateMap<Review, ReviewDto>();
+            CreateMap<Review, ReviewDto>()
+                .ForMember(d => d.ReviewerName, o => o.Ignore());
             CreateMap<SupportTicket, SupportTicketDto>();
             CreateMap<SafetyEvent, SafetyEventDto>();
             CreateMap<Vehicle, VehicleDto>();
@@ -45,6 +46,16 @@ namespace BdCabs.Api.Profiles
             CreateMap<VehicleDocument, VehicleDocumentDto>();
             CreateMap<FleetProfile, FleetProfileDto>();
             CreateMap<FleetDriver, FleetDriverDto>();
+
+            // ---- Corporate Client flows ------------------------------------
+            // EmployeeName on booking/recurring DTOs is filled in the service.
+            CreateMap<CorporateProfile, CorporateProfileDto>();
+            CreateMap<CorporateEmployee, CorporateEmployeeDto>();
+            CreateMap<CorporateBooking, CorporateBookingDto>();
+            CreateMap<CorporateRecurringRide, CorporateRecurringRideDto>();
+            // Vehicle/owner/corporate/driver enrichment is filled in the services.
+            CreateMap<CorporateRentalContract, CorporateRentalContractDto>();
+            CreateMap<CorporateRentalDriver, CorporateRentalDriverDto>();
         }
     }
 }

@@ -14,11 +14,13 @@ namespace BdCabs.Api.Controllers
     public class RidesController : ControllerBase
     {
         private readonly IRideService _rides;
+        private readonly IRoutingService _routing;
         private readonly ICurrentUser _me;
 
-        public RidesController(IRideService rides, ICurrentUser me)
+        public RidesController(IRideService rides, IRoutingService routing, ICurrentUser me)
         {
             _rides = rides;
+            _routing = routing;
             _me = me;
         }
 
@@ -104,6 +106,20 @@ namespace BdCabs.Api.Controllers
         public async Task<ActionResult<RideDto>> Complete(Guid id) => Ok(await _rides.Complete(Uid, id));
 
         // ---- Shared (Customer + Driver + Ops) ----
+
+        /// <summary>
+        /// Driving route (road-following geometry + distance/time) between two points,
+        /// proxied to the routing provider so the client never calls it directly.
+        /// Returns 204 when no route is available; the map then draws a straight line.
+        /// </summary>
+        [HttpGet("route")]
+        public async Task<ActionResult<RoutePathDto>> Route(
+            [FromQuery] double fromLat, [FromQuery] double fromLng,
+            [FromQuery] double toLat, [FromQuery] double toLng)
+        {
+            var path = await _routing.RoutePath(fromLat, fromLng, toLat, toLng);
+            return path is null ? NoContent() : Ok(path);
+        }
 
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<RideDto>> Get(Guid id) => Ok(await _rides.Get(Uid, Role, id));

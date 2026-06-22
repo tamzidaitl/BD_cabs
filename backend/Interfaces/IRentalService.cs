@@ -4,7 +4,7 @@ namespace BdCabs.Api.Interfaces
 {
     public interface IRentalService
     {
-        Task<List<VehicleDto>> AvailableVehicles();
+        Task<List<RentalVehicleDto>> AvailableVehicles();
         Task<RentalAgreementDto> RequestRental(Guid driverUserId, RentalRequestDto dto);
         Task<List<RentalAgreementDto>> Mine(Guid driverUserId);
         Task<RentDueDto> RentDue(Guid driverUserId, Guid agreementId);

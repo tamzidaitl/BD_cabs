@@ -55,6 +55,9 @@ namespace BdCabs.Api.Models
         /// <summary>Billing cadence for the asking rent — one of <see cref="Models.RentalPeriod"/>.</summary>
         [MaxLength(20)] public string? RentalPeriod { get; set; }
         [MaxLength(280)] public string? RentalTerms { get; set; }
+        /// <summary>Aggregate rating from rental drivers (Vehicle-target reviews);
+        /// null until first rated.</summary>
+        public double? Rating { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }

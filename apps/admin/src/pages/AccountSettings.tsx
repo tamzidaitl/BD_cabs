@@ -63,7 +63,9 @@ export default function AccountSettings() {
           fullName={user?.fullName ?? ''}
           avatarUser={user ?? null}
         />
+        <MyReviewsSection />
         {role === Role.FleetOwner && <FleetKycSection />}
+        {role === Role.Corporate && <CorporateKycSection />}
         <PasswordSection />
         {role === Role.Driver && <AvailabilitySection />}
       </Container>
@@ -162,6 +164,58 @@ function ProfileSection({
             {updateProfile.isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </Form>
+      </Card.Body>
+    </Card>
+  );
+}
+
+// ---- Ratings & reviews (every role) ---------------------------------------
+
+/**
+ * The signed-in user's average rating and the reviews they've received, shown to
+ * every role. Hidden/removed reviews are filtered out server-side, so this only
+ * ever shows live feedback.
+ */
+function MyReviewsSection() {
+  const { endpoints } = useServices();
+  const data = useQuery({
+    queryKey: queryKeys.reviews.me(),
+    queryFn: () => endpoints.reviews.me(),
+  });
+
+  const summary = data.data?.summary;
+  const reviews = data.data?.reviews ?? [];
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <Card.Body className="p-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h2 className="h6 mb-0">Your rating &amp; reviews</h2>
+          {summary && summary.count > 0 && (
+            <div className="text-end">
+              <span className="text-success h5 mb-0">★ {summary.average.toFixed(2)}</span>
+              <div className="text-muted small">
+                {summary.count} review{summary.count === 1 ? '' : 's'}
+              </div>
+            </div>
+          )}
+        </div>
+        {data.isLoading && <Spinner animation="border" size="sm" variant="success" />}
+        {!data.isLoading && reviews.length === 0 && (
+          <p className="text-muted mb-0">No reviews yet. Ratings you receive will appear here.</p>
+        )}
+        {reviews.map((r) => (
+          <div key={r.id} className="border-bottom py-2">
+            <div className="d-flex justify-content-between">
+              <span className="text-warning" aria-label={`${r.rating} stars`}>
+                {'★'.repeat(r.rating)}
+                <span className="text-muted">{'★'.repeat(5 - r.rating)}</span>
+              </span>
+              <span className="text-muted small">{new Date(r.createdAt).toLocaleDateString()}</span>
+            </div>
+            {r.comment && <p className="mb-0 mt-1 small">{r.comment}</p>}
+          </div>
+        ))}
       </Card.Body>
     </Card>
   );
@@ -312,6 +366,83 @@ function FleetKycSection() {
           <Form.Control value={bankAccount} onChange={(e) => setBank(e.target.value)} placeholder="Account / MFS number" />
         </Form.Group>
         <Button variant="success" disabled={!tradeLicenseNumber.trim() || !nidNumber.trim() || onboard.isPending} onClick={() => onboard.mutate()}>
+          {onboard.isPending ? 'Submitting…' : 'Submit KYC'}
+        </Button>
+      </Card.Body>
+    </Card>
+  );
+}
+
+// ---- Company verification / KYC (corporate clients only) ------------------
+
+function CorporateKycSection() {
+  const qc = useQueryClient();
+  const { endpoints } = useServices();
+
+  const profile = useQuery({
+    queryKey: queryKeys.corporate.me(),
+    queryFn: () => endpoints.corporate.me(),
+    retry: false,
+  });
+  const status = profile.data?.verificationStatus;
+
+  const [companyName, setCompanyName] = useState('');
+  const [tradeLicenseNumber, setTradeLicense] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [billingAddress, setBillingAddress] = useState('');
+
+  // Prefill from the saved profile once it resolves.
+  useEffect(() => {
+    if (!profile.data) return;
+    setCompanyName(profile.data.companyName ?? '');
+    setTradeLicense(profile.data.tradeLicenseNumber ?? '');
+    setBillingEmail(profile.data.billingEmail ?? '');
+    setBillingAddress(profile.data.billingAddress ?? '');
+  }, [profile.data]);
+
+  const onboard = useMutation({
+    mutationFn: () =>
+      endpoints.corporate.onboard({
+        companyName: companyName.trim(),
+        tradeLicenseNumber: tradeLicenseNumber.trim(),
+        billingEmail: billingEmail.trim() || undefined,
+        billingAddress: billingAddress.trim() || undefined,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.corporate.me() }),
+  });
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <Card.Body className="p-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h2 className="h6 mb-0">Company verification (KYC)</h2>
+          {status && (
+            <Badge bg={status === 'approved' ? 'success' : status === 'rejected' ? 'danger' : 'warning'} text={status === 'pending' ? 'dark' : undefined}>
+              {status}
+            </Badge>
+          )}
+        </div>
+        {onboard.isSuccess && <Alert variant="success" className="py-2">KYC submitted for review.</Alert>}
+        {onboard.isError && (
+          <Alert variant="danger" className="py-2">{onboard.error instanceof ApiError ? onboard.error.message : 'Submission failed.'}</Alert>
+        )}
+        <Form.Group className="mb-2">
+          <Form.Label className="small text-muted mb-1">Company name</Form.Label>
+          <Form.Control value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Sample Corporation Ltd." />
+        </Form.Group>
+        <Form.Group className="mb-2">
+          <Form.Label className="small text-muted mb-1">Trade licence number</Form.Label>
+          <Form.Control value={tradeLicenseNumber} onChange={(e) => setTradeLicense(e.target.value)} placeholder="TRAD-000123" />
+        </Form.Group>
+        <Form.Group className="mb-2">
+          <Form.Label className="small text-muted mb-1">Billing email</Form.Label>
+          <Form.Control type="email" value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} placeholder="billing@company.com" />
+        </Form.Group>
+        <Form.Group className="mb-3">
+          <Form.Label className="small text-muted mb-1">Billing address</Form.Label>
+          <Form.Control as="textarea" rows={2} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} placeholder="Street, city, postcode" />
+        </Form.Group>
+        <Button variant="success" disabled={!companyName.trim() || !tradeLicenseNumber.trim() || onboard.isPending} onClick={() => onboard.mutate()}>
           {onboard.isPending ? 'Submitting…' : 'Submit KYC'}
         </Button>
       </Card.Body>

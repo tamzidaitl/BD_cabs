@@ -1,16 +1,17 @@
 import { Role } from '@bd-cabs/core';
 
 /**
- * Where each role lands after sign-in. Customers, drivers, and fleet owners all
- * share one authenticated portal mounted at `/app`; which pages they see is
- * decided by their role (see `portalConfigForRole`). Staff go to the admin
- * console. The Corporate portal is not built yet, so it falls back there too.
+ * Where each role lands after sign-in. Customers, drivers, fleet owners, and
+ * corporate clients all share one authenticated portal mounted at `/app`; which
+ * pages they see is decided by their role (see `portalConfigForRole`). Staff go
+ * to the admin console.
  */
 export function homePathForRole(role: Role | null | undefined): string {
   switch (role) {
     case Role.Customer:
     case Role.Driver:
     case Role.FleetOwner:
+    case Role.Corporate:
       return '/app';
     default:
       return '/dashboard';
@@ -31,6 +32,7 @@ export const CUSTOMER_NAV: AppNavItem[] = [
   { to: '/app/rides', label: 'My rides', icon: 'Route' },
   { to: '/app/wallet', label: 'Wallet', icon: 'Wallet' },
   { to: '/app/places', label: 'Saved places', icon: 'Star' },
+  { to: '/app/rating', label: 'My rating', icon: 'Star' },
   { to: '/app/support', label: 'Support', icon: 'LifeBuoy' },
 ];
 
@@ -40,14 +42,26 @@ export const DRIVER_NAV: AppNavItem[] = [
   { to: '/app/earnings', label: 'Earnings', icon: 'Banknote' },
   { to: '/app/documents', label: 'Documents', icon: 'FileText' },
   { to: '/app/rentals', label: 'Rentals', icon: 'Car' },
+  { to: '/app/rating', label: 'My rating', icon: 'Star' },
 ];
 
 export const FLEET_NAV: AppNavItem[] = [
   { to: '/app', label: 'Overview', icon: 'LayoutDashboard', end: true },
   { to: '/app/vehicles', label: 'Vehicles', icon: 'Car' },
   { to: '/app/drivers', label: 'Drivers & Rentals', icon: 'Users' },
+  { to: '/app/corporate-rentals', label: 'Corporate Rentals', icon: 'Building2' },
   { to: '/app/performance', label: 'Performance', icon: 'TrendingUp' },
   { to: '/app/reviews', label: 'Reviews', icon: 'Star' },
+];
+
+export const CORPORATE_NAV: AppNavItem[] = [
+  { to: '/app', label: 'Overview', icon: 'LayoutDashboard', end: true },
+  { to: '/app/employees', label: 'Employees', icon: 'Users' },
+  { to: '/app/bookings', label: 'Bookings', icon: 'MapPin' },
+  { to: '/app/vehicle-rentals', label: 'Vehicle Rentals', icon: 'Car' },
+  { to: '/app/billing', label: 'Billing & Reports', icon: 'FileText' },
+  { to: '/app/fleet-reviews', label: 'Fleet Reviews', icon: 'Star' },
+  { to: '/app/rating', label: 'My rating', icon: 'Award' },
 ];
 
 /** Brand + nav + nav style for a role's view of the shared `/app` portal. */
@@ -58,17 +72,19 @@ export interface PortalConfig {
 }
 
 /**
- * Resolve the portal chrome for the three portal roles. Returns null for any
- * other role (staff/corporate/guest), which the shell treats as unauthorized.
+ * Resolve the portal chrome for the four portal roles. Returns null for any
+ * other role (staff/guest), which the shell treats as unauthorized.
  */
 export function portalConfigForRole(role: Role | null | undefined): PortalConfig | null {
   switch (role) {
     case Role.Customer:
       return { brand: 'BD Cabs', nav: CUSTOMER_NAV, navVariant: 'dropdown' };
     case Role.Driver:
-      return { brand: 'BD Cabs Driver', nav: DRIVER_NAV, navVariant: 'inline' };
+      return { brand: 'BD Cabs Driver', nav: DRIVER_NAV, navVariant: 'dropdown' };
     case Role.FleetOwner:
       return { brand: 'BD Cabs Fleet', nav: FLEET_NAV, navVariant: 'inline' };
+    case Role.Corporate:
+      return { brand: 'BD Cabs Corporate', nav: CORPORATE_NAV, navVariant: 'inline' };
     default:
       return null;
   }

@@ -25,7 +25,7 @@ namespace BdCabs.Api.Controllers
         private Guid Uid => _me.UserId ?? throw AppException.Unauthorized("Not authenticated.");
 
         [HttpGet("available-vehicles")]
-        public async Task<ActionResult<List<VehicleDto>>> Available() => Ok(await _rentals.AvailableVehicles());
+        public async Task<ActionResult<List<RentalVehicleDto>>> Available() => Ok(await _rentals.AvailableVehicles());
 
         [HttpPost("requests")]
         public async Task<ActionResult<RentalAgreementDto>> Request([FromBody] RentalRequestDto dto)

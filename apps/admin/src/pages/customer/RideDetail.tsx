@@ -1,22 +1,38 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, Col, Form, Row, Spinner } from 'react-bootstrap';
-import { AlertTriangle, Share2 } from 'lucide-react';
+import { AlertTriangle, KeyRound, Share2 } from 'lucide-react';
 import {
   ApiError,
+  PaymentStatus,
+  ReviewTargetType,
   RideStatus,
+  useAuthStore,
   useCancelRide,
-  useCreateReview,
   useRide,
+  useRideReviews,
   useRideTrack,
   useServices,
 } from '@bd-cabs/core';
 import { formatBDT, formatDistance, formatDuration } from '@/lib/appNav';
+import { RideMap, RideMapMarker } from '@/components/RideMap';
+import { RatingCard } from '@/components/RatingCard';
 import { rideStatusVariant } from './rideStatus';
+
+const DRIVER_FEEDBACK_TAGS = ['Clean car', 'On time', 'Safe driving', 'Friendly', 'Great route', 'Smooth ride'];
 
 const ACTIVE = [RideStatus.Requested, RideStatus.Accepted, RideStatus.DriverArrived, RideStatus.InProgress] as string[];
 const CANCELLABLE = [RideStatus.Requested, RideStatus.Scheduled, RideStatus.Accepted, RideStatus.DriverArrived] as string[];
+// Statuses where the start code is still relevant — from the moment the ride is
+// booked up until the trip actually starts. The rider can keep it handy and read
+// it out to the driver once one is assigned.
+const PRE_START = [
+  RideStatus.Requested,
+  RideStatus.Scheduled,
+  RideStatus.Accepted,
+  RideStatus.DriverArrived,
+] as string[];
 
 /**
  * Live ride detail for the customer: status + driver tracking (polls while
@@ -30,9 +46,17 @@ export default function RideDetailPage() {
   const isActive = !!ride.data && ACTIVE.includes(ride.data.status);
   const track = useRideTrack(id, isActive);
   const cancel = useCancelRide();
-  const review = useCreateReview();
 
   const isCompleted = ride.data?.status === RideStatus.Completed;
+
+  // Offer the driver rating only until the customer has actually submitted it —
+  // the card stays hidden across reloads/revisits once a rating exists.
+  const myId = useAuthStore((s) => s.session?.userId);
+  const reviews = useRideReviews(id, isCompleted);
+  const alreadyRatedDriver = (reviews.data ?? []).some(
+    (r) => r.reviewerId === myId && r.revieweeType === ReviewTargetType.Driver,
+  );
+  const showRateDriver = isCompleted && !reviews.isLoading && !alreadyRatedDriver;
 
   const breakdown = useQuery({
     queryKey: ['fare-breakdown', id],
@@ -40,17 +64,39 @@ export default function RideDetailPage() {
     enabled: isCompleted,
   });
 
-  const charge = useMutation({ mutationFn: () => endpoints.payments.charge(id, {}) });
+  const qc = useQueryClient();
+  const charge = useMutation({
+    mutationFn: () => endpoints.payments.charge(id, {}),
+    // The payment is persisted server-side; refresh the ride (and money views) so
+    // the durable "Paid" state shows here and everywhere, even after a reload.
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['rides', 'detail', id] });
+      void qc.invalidateQueries({ queryKey: ['rides', 'mine'] });
+      void qc.invalidateQueries({ queryKey: ['payments'] });
+      void qc.invalidateQueries({ queryKey: ['wallet'] });
+    },
+  });
   const sos = useMutation({ mutationFn: () => endpoints.safety.sos({ rideId: id }) });
   const share = useMutation({
     mutationFn: (v: { contactName: string; contactPhone: string }) =>
       endpoints.safety.shareTrip({ rideId: id, ...v }),
   });
 
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+
+  const markers = useMemo<RideMapMarker[]>(() => {
+    const data = ride.data;
+    if (!data) return [];
+    const list: RideMapMarker[] = [
+      { kind: 'pickup', lat: data.pickup.lat, lng: data.pickup.lng, label: `Pickup · ${data.pickup.address ?? ''}` },
+      { kind: 'destination', lat: data.destination.lat, lng: data.destination.lng, label: `Destination · ${data.destination.address ?? ''}` },
+    ];
+    if (track.data?.driverLat != null && track.data.driverLng != null) {
+      list.push({ kind: 'driver', lat: track.data.driverLat, lng: track.data.driverLng, label: 'Your driver' });
+    }
+    return list;
+  }, [ride.data, track.data]);
 
   if (ride.isLoading) {
     return <div className="text-center py-5"><Spinner animation="border" variant="success" /></div>;
@@ -83,11 +129,12 @@ export default function RideDetailPage() {
               </div>
             </div>
             <hr />
-            <div className="d-flex justify-content-between text-muted small">
+            <div className="d-flex justify-content-between text-muted small mb-3">
               <span>{r.vehicleTypeId}</span>
               <span>{formatDistance(r.distanceMeters)} · {formatDuration(r.durationSeconds)}</span>
               <span>{new Date(r.requestedAt).toLocaleString()}</span>
             </div>
+            <RideMap markers={markers} route height={300} />
           </Card.Body>
         </Card>
 
@@ -134,6 +181,19 @@ export default function RideDetailPage() {
       </Col>
 
       <Col xs={12} lg={5}>
+        {/* Start trip OTP — the rider reads this code out to the driver to begin the trip */}
+        {r.startOtp && PRE_START.includes(r.status) && (
+          <Card className="border-0 shadow-sm mb-4">
+            <Card.Body className="p-4">
+              <h2 className="h6 text-uppercase text-muted d-flex align-items-center gap-2">
+                <KeyRound size={16} /> Start trip OTP
+              </h2>
+              <p className="text-muted small mb-2">Share this code with your driver to start the trip.</p>
+              <div className="display-6 fw-bold font-monospace">{r.startOtp}</div>
+            </Card.Body>
+          </Card>
+        )}
+
         {/* Pay */}
         <Card className="border-0 shadow-sm mb-4">
           <Card.Body className="p-4">
@@ -143,12 +203,24 @@ export default function RideDetailPage() {
             </div>
             <div className="text-muted small mb-3">via {r.paymentMethod}</div>
             {(r.status === RideStatus.Completed || r.status === RideStatus.Cancelled) && (
-              charge.isSuccess ? (
-                <Alert variant="success" className="mb-0">Payment {charge.data?.status?.toLowerCase()} — {formatBDT(charge.data?.amountMinor)}.</Alert>
+              // Paid state comes from the ride itself (persisted), so it survives a
+              // reload; charge.isSuccess only smooths the moment before the refetch.
+              r.paymentStatus === PaymentStatus.Paid || charge.isSuccess ? (
+                <Alert variant="success" className="mb-0">
+                  Payment received — {formatBDT(r.amountPaidMinor ?? charge.data?.amountMinor ?? payable)} via {r.paymentMethod}
+                  {r.paidAt && <> on {new Date(r.paidAt).toLocaleString()}</>}.
+                </Alert>
               ) : (
-                <Button variant="success" className="w-100" disabled={charge.isPending} onClick={() => charge.mutate()}>
-                  {charge.isPending ? 'Processing…' : 'Pay now'}
-                </Button>
+                <>
+                  <Button variant="success" className="w-100" disabled={charge.isPending} onClick={() => charge.mutate()}>
+                    {charge.isPending ? 'Processing…' : 'Pay now'}
+                  </Button>
+                  {charge.isError && (
+                    <div className="text-danger small mt-2">
+                      {charge.error instanceof ApiError ? charge.error.message : 'Payment failed. Please try again.'}
+                    </div>
+                  )}
+                </>
               )
             )}
             {r.status === RideStatus.Cancelled && r.cancellationFeeMinor > 0 && (
@@ -198,31 +270,13 @@ export default function RideDetailPage() {
         )}
 
         {/* Rate driver */}
-        {isCompleted && (
-          <Card className="border-0 shadow-sm">
-            <Card.Body className="p-4">
-              <h2 className="h6 text-uppercase text-muted">Rate your driver</h2>
-              {review.isSuccess ? (
-                <Alert variant="success" className="mb-0">Thanks for your feedback!</Alert>
-              ) : (
-                <>
-                  <Form.Select className="mb-2" value={rating} onChange={(e) => setRating(Number(e.target.value))}>
-                    {[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{'★'.repeat(n)} ({n})</option>)}
-                  </Form.Select>
-                  <Form.Control as="textarea" rows={2} className="mb-2" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} />
-                  {review.isError && (
-                    <div className="text-danger small mb-2">
-                      {review.error instanceof ApiError ? review.error.message : 'Could not submit review.'}
-                    </div>
-                  )}
-                  <Button variant="success" className="w-100" disabled={review.isPending}
-                    onClick={() => review.mutate({ rideId: id, rating, comment: comment.trim() || undefined })}>
-                    {review.isPending ? 'Submitting…' : 'Submit rating'}
-                  </Button>
-                </>
-              )}
-            </Card.Body>
-          </Card>
+        {showRateDriver && (
+          <RatingCard
+            rideId={id}
+            title="Rate your driver"
+            prompt="How was your trip?"
+            tags={DRIVER_FEEDBACK_TAGS}
+          />
         )}
       </Col>
     </Row>
@@ -237,3 +291,4 @@ function BreakdownRow({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
+

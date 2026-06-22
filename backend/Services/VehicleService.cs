@@ -82,7 +82,27 @@ namespace BdCabs.Api.Services
                 .Where(v => v.OwnerId == userId || rentedIds.Contains(v.Id))
                 .OrderByDescending(v => v.UpdatedAt)
                 .ToListAsync();
-            return _mapper.Map<List<VehicleDto>>(vehicles);
+
+            // Mark which of these cars are currently in a driver's hands so the owner
+            // UI can lock status changes (mirrors the SetStatus guard).
+            var vehicleIds = vehicles.Select(v => v.Id).ToList();
+            var rentedOut = (await _db.RentalAgreements.AsNoTracking()
+                .Where(a => vehicleIds.Contains(a.VehicleId) &&
+                            (a.Status == RentalStatus.Active || a.Status == RentalStatus.Approved))
+                .Select(a => a.VehicleId)
+                .ToListAsync()).ToHashSet();
+            // A car committed to a corporate rental contract is equally locked.
+            foreach (var id in await _db.CorporateRentalContracts.AsNoTracking()
+                .Where(c => vehicleIds.Contains(c.VehicleId) &&
+                            (c.Status == CorporateRentalStatus.Approved || c.Status == CorporateRentalStatus.Active))
+                .Select(c => c.VehicleId)
+                .ToListAsync())
+                rentedOut.Add(id);
+
+            var dtos = _mapper.Map<List<VehicleDto>>(vehicles);
+            foreach (var dto in dtos)
+                dto.IsRentedOut = rentedOut.Contains(dto.Id);
+            return dtos;
         }
 
         public async Task<VehicleDto> Update(Guid ownerId, Guid vehicleId, VehicleUpdateDto dto)
@@ -134,7 +154,10 @@ namespace BdCabs.Api.Services
             bool hasActiveAgreement = await _db.RentalAgreements.AnyAsync(a =>
                 a.VehicleId == vehicleId &&
                 (a.Status == RentalStatus.Active || a.Status == RentalStatus.Approved));
-            if (hasActiveAgreement)
+            bool hasCorporateContract = await _db.CorporateRentalContracts.AnyAsync(c =>
+                c.VehicleId == vehicleId &&
+                (c.Status == CorporateRentalStatus.Approved || c.Status == CorporateRentalStatus.Active));
+            if (hasActiveAgreement || hasCorporateContract)
                 throw AppException.Conflict("This vehicle has an active rental agreement and cannot be removed.", "VEHICLE_IN_USE");
 
             _db.Vehicles.Remove(vehicle);
@@ -150,6 +173,18 @@ namespace BdCabs.Api.Services
             // A vehicle can only be made active once Ops has verified it.
             if (dto.Status == VehicleStatus.Active && vehicle.VerificationStatus != Models.VerificationStatus.Approved)
                 throw AppException.Forbidden("This vehicle must be verified before it can be activated.", "VEHICLE_NOT_VERIFIED");
+
+            // While a car is rented out it's in the driver's hands — the owner can't
+            // change its operational status until the rental ends. The same holds while
+            // it's committed to a corporate rental contract.
+            bool rentedOut = await _db.RentalAgreements.AnyAsync(a =>
+                a.VehicleId == vehicleId &&
+                (a.Status == RentalStatus.Active || a.Status == RentalStatus.Approved));
+            bool corporateCommitted = await _db.CorporateRentalContracts.AnyAsync(c =>
+                c.VehicleId == vehicleId &&
+                (c.Status == CorporateRentalStatus.Approved || c.Status == CorporateRentalStatus.Active));
+            if (rentedOut || corporateCommitted)
+                throw AppException.Conflict("This vehicle is currently rented out and its status cannot be changed until the rental ends.", "VEHICLE_RENTED_OUT");
 
             vehicle.Status = dto.Status;
             vehicle.IsActive = dto.Status == VehicleStatus.Active;

@@ -29,5 +29,16 @@ namespace BdCabs.Api.Interfaces
         Task<List<SettlementDto>> Settlements(Guid ownerId);
 
         Task<List<ReviewDto>> ReviewsReceived(Guid ownerId);
+        Task<ReviewDto> ReviewDriver(Guid ownerId, FleetDriverReviewInputDto dto);
+
+        // Corporate rental contracts (Corporate ↔ Vehicle Owner)
+        Task<List<CorporateRentalContractDto>> CorporateRentalRequests(Guid ownerId);
+        Task<CorporateRentalContractDto> ApproveCorporateRental(Guid ownerId, Guid contractId, ApproveCorporateRentalDto dto);
+        Task<CorporateRentalContractDto> RejectCorporateRental(Guid ownerId, Guid contractId, RejectRentalDto dto);
+        Task<CorporateRentalContractDto> ActivateCorporateRental(Guid ownerId, Guid contractId);
+        Task<CorporateRentalContractDto> CompleteCorporateRental(Guid ownerId, Guid contractId);
+        Task<CorporateRentalContractDto> AssignDriver(Guid ownerId, Guid contractId, AssignRentalDriverDto dto);
+        Task<CorporateRentalContractDto> UnassignDriver(Guid ownerId, Guid contractId, Guid driverId);
+        Task<ReviewDto> CreateCorporateReview(Guid ownerId, FleetCorporateReviewInputDto dto);
     }
 }

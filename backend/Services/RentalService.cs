@@ -27,24 +27,68 @@ namespace BdCabs.Api.Services
             _wallet = wallet;
         }
 
-        public async Task<List<VehicleDto>> AvailableVehicles()
+        public async Task<List<RentalVehicleDto>> AvailableVehicles()
         {
-            // Cars a driver can rent: offered for rent, verified, not under maintenance,
-            // and not already committed to another driver. We deliberately do NOT require
-            // the rides "active" flag (IsActive) — a for-rent car that no one drives yet is
-            // naturally inactive, so requiring it would hide every fresh listing.
+            // Cars a driver can rent: offered for rent, verified, currently active,
+            // and not already committed to another driver. An owner who sets a car to
+            // inactive or maintenance pulls it from the marketplace, so we require the
+            // active status here (not just "not under maintenance").
             var rentedOut = _db.RentalAgreements
                 .Where(a => a.Status == RentalStatus.Active || a.Status == RentalStatus.Approved)
                 .Select(a => a.VehicleId);
+            // A car committed to a corporate rental contract is also off the market.
+            var corporateCommitted = _db.CorporateRentalContracts
+                .Where(c => c.Status == CorporateRentalStatus.Approved || c.Status == CorporateRentalStatus.Active)
+                .Select(c => c.VehicleId);
 
             var vehicles = await _db.Vehicles.AsNoTracking()
                 .Where(v => v.ForRent
                     && v.VerificationStatus == VerificationStatus.Approved
-                    && v.Status != VehicleStatus.Maintenance
-                    && !rentedOut.Contains(v.Id))
+                    && v.Status == VehicleStatus.Active
+                    && !rentedOut.Contains(v.Id)
+                    && !corporateCommitted.Contains(v.Id))
                 .OrderByDescending(v => v.UpdatedAt)
                 .ToListAsync();
-            return _mapper.Map<List<VehicleDto>>(vehicles);
+
+            var vehicleIds = vehicles.Select(v => v.Id).ToList();
+            var ownerIds = vehicles.Select(v => v.OwnerId).Distinct().ToList();
+
+            // The Fleet Owner behind each car (display name + avatar) and their KYC
+            // profile (company name + aggregate rating), so the driver knows who they'd
+            // be renting from. Keyed by the owning user id.
+            var owners = await _db.Users.AsNoTracking()
+                .Where(u => ownerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id);
+            var profiles = await _db.FleetProfiles.AsNoTracking()
+                .Where(p => ownerIds.Contains(p.UserId))
+                .ToDictionaryAsync(p => p.UserId);
+
+            // All documents uploaded against each car are surfaced to the driver; the
+            // per-document verification status rides along so the UI can flag which
+            // papers are verified vs. still pending/rejected.
+            var docs = await _db.VehicleDocuments.AsNoTracking()
+                .Where(d => vehicleIds.Contains(d.VehicleId))
+                .OrderByDescending(d => d.CreatedAt)
+                .ToListAsync();
+            var docsByVehicle = docs
+                .GroupBy(d => d.VehicleId)
+                .ToDictionary(g => g.Key, g => _mapper.Map<List<VehicleDocumentDto>>(g.ToList()));
+
+            return vehicles.Select(v => new RentalVehicleDto
+            {
+                Vehicle = _mapper.Map<VehicleDto>(v),
+                Owner = owners.TryGetValue(v.OwnerId, out var u)
+                    ? new RentalOwnerDto
+                    {
+                        Id = u.Id,
+                        FullName = u.FullName,
+                        AvatarUrl = u.AvatarUrl,
+                        CompanyName = profiles.TryGetValue(u.Id, out var p) ? p.CompanyName : null,
+                        Rating = profiles.TryGetValue(u.Id, out var pr) ? pr.Rating : null,
+                    }
+                    : null,
+                Documents = docsByVehicle.TryGetValue(v.Id, out var d) ? d : new List<VehicleDocumentDto>(),
+            }).ToList();
         }
 
         public async Task<RentalAgreementDto> RequestRental(Guid driverUserId, RentalRequestDto dto)
@@ -59,6 +103,12 @@ namespace BdCabs.Api.Services
                 (a.Status == RentalStatus.Requested || a.Status == RentalStatus.Approved || a.Status == RentalStatus.Active));
             if (duplicate)
                 throw AppException.Conflict("You already have a pending or active request for this vehicle.", "RENTAL_REQUEST_EXISTS");
+
+            bool corporateCommitted = await _db.CorporateRentalContracts.AnyAsync(c =>
+                c.VehicleId == vehicle.Id &&
+                (c.Status == CorporateRentalStatus.Approved || c.Status == CorporateRentalStatus.Active));
+            if (corporateCommitted)
+                throw AppException.Conflict("This vehicle is currently committed to a corporate rental contract.", "VEHICLE_COMMITTED");
 
             var now = DateTime.UtcNow;
             var agreement = new RentalAgreement
@@ -80,11 +130,25 @@ namespace BdCabs.Api.Services
 
         public async Task<List<RentalAgreementDto>> Mine(Guid driverUserId)
         {
+            // End any of this driver's rentals whose owner-set end date has passed, so
+            // they drop out of the active list and the driver can rate them.
+            await RentalLifecycle.EndExpired(_db, a => a.DriverId == driverUserId, DateTime.UtcNow);
+
             var agreements = await _db.RentalAgreements.AsNoTracking()
                 .Where(a => a.DriverId == driverUserId)
                 .OrderByDescending(a => a.RequestedAt)
                 .ToListAsync();
-            return _mapper.Map<List<RentalAgreementDto>>(agreements);
+
+            // Attach the rented car (photo + owner's listed price/period) so the driver's
+            // agreement list shows which vehicle it is and what the rent is.
+            var vehicleSummaries = await RentalVehicleSummaryLoader.Load(_db, agreements);
+
+            return agreements.Select(a =>
+            {
+                var dto = _mapper.Map<RentalAgreementDto>(a);
+                dto.Vehicle = vehicleSummaries.TryGetValue(a.VehicleId, out var v) ? v : null;
+                return dto;
+            }).ToList();
         }
 
         public async Task<RentDueDto> RentDue(Guid driverUserId, Guid agreementId)
