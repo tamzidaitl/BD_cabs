@@ -8,7 +8,7 @@ import {
   type Services,
 } from '@bd-cabs/core';
 import { webStorage } from '@/lib/webStorage';
-import { createWebServices } from '@/lib/services';
+import { createWebServices } from '@/helpers';
 
 // Devtools are dev-only and lazy-loaded so they stay out of the production bundle.
 const Devtools = import.meta.env.DEV

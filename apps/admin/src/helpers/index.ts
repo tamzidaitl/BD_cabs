@@ -24,7 +24,6 @@ export function createWebServices(): Services {
       const refreshToken = store.session?.tokens.refreshToken;
       if (!refreshToken) return null;
       try {
-        // Use a bare client to avoid recursive refresh.
         const res = await fetch(`${BASE_URL}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

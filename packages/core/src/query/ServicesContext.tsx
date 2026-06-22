@@ -1,6 +1,5 @@
 import { createContext, createElement, useContext, type ReactNode } from 'react';
-import type { ApiClient } from '../api/client';
-import type { Endpoints } from '../api/endpoints';
+import type { ApiClient, Endpoints } from '../helpers';
 import type { RealtimeConnection } from '../realtime/connection';
 
 /**

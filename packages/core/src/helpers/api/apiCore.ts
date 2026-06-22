@@ -1,4 +1,4 @@
-import type { ApiErrorBody } from '../models/entities';
+import type { ApiErrorBody } from '../../models/entities';
 
 export interface ApiClientConfig {
   baseUrl: string;
@@ -37,9 +37,8 @@ export interface RequestOptions {
 }
 
 /**
- * A small, dependency-free HTTP client built on `fetch` (available in browsers,
- * Node 18+, and React Native). It owns auth-header injection and one-shot token
- * refresh on 401 so every screen — web or native — gets the same behaviour.
+ * HTTP client built on `fetch` (browsers, Node 18+, React Native). Owns auth-header
+ * injection and one-shot token refresh on 401 so every screen gets the same behaviour.
  */
 export class ApiClient {
   constructor(private readonly config: ApiClientConfig) {}
@@ -52,8 +51,6 @@ export class ApiClient {
     const url = this.buildUrl(path, options.query);
     const headers: Record<string, string> = { Accept: 'application/json' };
 
-    // FormData (file uploads) is sent as-is; the browser sets the multipart
-    // Content-Type with boundary. Everything else is JSON-serialized.
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
     if (!options.anonymous) {
@@ -73,7 +70,6 @@ export class ApiClient {
       signal: options.signal,
     });
 
-    // One-shot refresh-and-retry on expiry.
     if (res.status === 401 && allowRefresh && this.config.refreshAccessToken) {
       const fresh = await this.config.refreshAccessToken();
       if (fresh) return this.exec<T>(path, options, false);

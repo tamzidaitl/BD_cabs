@@ -16,7 +16,7 @@ import type {
   SavedPlaceInput,
   SupportTicketInput,
   RegisterInput,
-} from '../api/endpoints';
+} from '../helpers';
 import type { AvailabilityMode } from '../models/enums';
 import type {
   AdminRide,
